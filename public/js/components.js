@@ -717,6 +717,346 @@ class ModalComponent extends Component {
 // Register modal component
 window.ComponentRegistry.register('modal', ModalComponent);
 
+// Lazy Loading System for Components
+class LazyComponentLoader {
+    constructor() {
+        this.loadedComponents = new Set();
+        this.loadingPromises = new Map();
+        this.componentDependencies = {
+            'dashboard-stats': ['api.js', 'utils.js'],
+            'service-card': ['api.js', 'utils.js'],
+            'notifications': ['api.js', 'utils.js'],
+            'login-form': ['api.js', 'validation.js', 'form-utils.js'],
+            'modal': ['utils.js']
+        };
+    }
+
+    /**
+     * Load component asynchronously
+     */
+    async loadComponent(componentName, props = {}) {
+        // Check if component is already loaded
+        if (this.loadedComponents.has(componentName)) {
+            return window.ComponentRegistry.create(componentName, props);
+        }
+
+        // Check if component is currently loading
+        if (this.loadingPromises.has(componentName)) {
+            await this.loadingPromises.get(componentName);
+            return window.ComponentRegistry.create(componentName, props);
+        }
+
+        // Start loading component
+        const loadingPromise = this.loadComponentAsync(componentName);
+        this.loadingPromises.set(componentName, loadingPromise);
+
+        try {
+            await loadingPromise;
+            this.loadedComponents.add(componentName);
+            this.loadingPromises.delete(componentName);
+            return window.ComponentRegistry.create(componentName, props);
+        } catch (error) {
+            this.loadingPromises.delete(componentName);
+            throw error;
+        }
+    }
+
+    /**
+     * Load component and its dependencies
+     */
+    async loadComponentAsync(componentName) {
+        // Load dependencies first
+        const dependencies = this.componentDependencies[componentName] || [];
+        await this.loadDependencies(dependencies);
+
+        // Load component file
+        const componentPath = `/js/components/${componentName}.js`;
+        await this.loadScript(componentPath);
+    }
+
+    /**
+     * Load script dependencies
+     */
+    async loadDependencies(dependencies) {
+        const loadPromises = dependencies.map(dep => {
+            if (!this.isScriptLoaded(dep)) {
+                return this.loadScript(`/js/${dep}`);
+            }
+        }).filter(Boolean);
+
+        await Promise.all(loadPromises);
+    }
+
+    /**
+     * Load script file
+     */
+    loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+
+            document.head.appendChild(script);
+        });
+    }
+
+    /**
+     * Check if script is already loaded
+     */
+    isScriptLoaded(filename) {
+        const scripts = document.querySelectorAll('script[src]');
+        return Array.from(scripts).some(script => script.src.includes(filename));
+    }
+
+    /**
+     * Preload components for better performance
+     */
+    preloadComponents(componentNames) {
+        componentNames.forEach(name => {
+            // Use requestIdleCallback if available, otherwise setTimeout
+            const preloadFn = () => this.loadComponentAsync(name).catch(() => {
+                // Silently fail preloading to avoid console errors
+            });
+
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(preloadFn, { timeout: 2000 });
+            } else {
+                setTimeout(preloadFn, 100);
+            }
+        });
+    }
+
+    /**
+     * Get loading status
+     */
+    isLoading(componentName) {
+        return this.loadingPromises.has(componentName);
+    }
+
+    /**
+     * Get loaded components
+     */
+    getLoadedComponents() {
+        return Array.from(this.loadedComponents);
+    }
+}
+
+// Global lazy loader
+window.LazyComponentLoader = new LazyComponentLoader();
+
+// Enhanced ComponentRenderer with lazy loading
+class LazyComponentRenderer extends ComponentRenderer {
+    constructor(registry, lazyLoader) {
+        super(registry);
+        this.lazyLoader = lazyLoader;
+    }
+
+    /**
+     * Render component with lazy loading
+     */
+    async renderLazy(componentName, container, props = {}) {
+        try {
+            // Show loading state
+            this.showLoadingState(container);
+
+            // Load component
+            const component = await this.lazyLoader.loadComponent(componentName, props);
+
+            // Mount component
+            component.mount(container);
+
+            // Store reference
+            this.mountedComponents.set(container, component);
+
+            return component;
+        } catch (error) {
+            console.error(`Failed to load component ${componentName}:`, error);
+            this.showErrorState(container, componentName, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Show loading state
+     */
+    showLoadingState(container) {
+        container.innerHTML = `
+            <div class="component-loading">
+                <div class="loading-spinner"></div>
+                <p>Loading component...</p>
+            </div>
+        `;
+    }
+
+    /**
+     * Show error state
+     */
+    showErrorState(container, componentName, error) {
+        container.innerHTML = `
+            <div class="component-error">
+                <div class="error-icon">⚠️</div>
+                <p>Failed to load component: ${componentName}</p>
+                <button class="btn btn-sm btn-secondary retry-btn">Retry</button>
+            </div>
+        `;
+
+        // Add retry functionality
+        const retryBtn = container.querySelector('.retry-btn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+                this.renderLazy(componentName, container);
+            });
+        }
+    }
+
+    /**
+     * Render component with intersection observer for viewport loading
+     */
+    renderOnVisible(componentName, container, props = {}, rootMargin = '50px') {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    this.renderLazy(componentName, container, props);
+                    observer.unobserve(container);
+                }
+            });
+        }, { rootMargin });
+
+        observer.observe(container);
+    }
+}
+
+// Enhanced renderer with lazy loading
+window.LazyComponentRenderer = new LazyComponentRenderer(window.ComponentRegistry, window.LazyComponentLoader);
+
+// Intersection Observer for lazy loading components
+class ComponentIntersectionObserver {
+    constructor(renderer) {
+        this.renderer = renderer;
+        this.observer = new IntersectionObserver(
+            this.handleIntersection.bind(this),
+            {
+                rootMargin: '100px',
+                threshold: 0.1
+            }
+        );
+        this.observedElements = new Map();
+    }
+
+    /**
+     * Observe element for lazy loading
+     */
+    observe(element, componentName, props = {}) {
+        element.setAttribute('data-component', componentName);
+        element.setAttribute('data-component-props', JSON.stringify(props));
+        this.observedElements.set(element, { componentName, props });
+        this.observer.observe(element);
+    }
+
+    /**
+     * Stop observing element
+     */
+    unobserve(element) {
+        this.observer.unobserve(element);
+        this.observedElements.delete(element);
+    }
+
+    /**
+     * Handle intersection events
+     */
+    handleIntersection(entries) {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const element = entry.target;
+                const componentData = this.observedElements.get(element);
+
+                if (componentData) {
+                    this.renderer.renderLazy(
+                        componentData.componentName,
+                        element,
+                        componentData.props
+                    );
+                    this.unobserve(element);
+                }
+            }
+        });
+    }
+
+    /**
+     * Observe all elements with data-component attribute
+     */
+    observeAll() {
+        document.querySelectorAll('[data-component]').forEach(element => {
+            const componentName = element.getAttribute('data-component');
+            const propsAttr = element.getAttribute('data-component-props');
+            const props = propsAttr ? JSON.parse(propsAttr) : {};
+
+            this.observe(element, componentName, props);
+        });
+    }
+}
+
+// Global intersection observer
+window.ComponentIntersectionObserver = new ComponentIntersectionObserver(window.LazyComponentRenderer);
+
+// Auto-initialize intersection observer when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.ComponentIntersectionObserver.observeAll();
+});
+
+// Utility functions for lazy loading
+window.ComponentUtils = {
+    /**
+     * Load component on user interaction
+     */
+    loadOnClick(buttonSelector, componentName, container, props = {}) {
+        document.addEventListener('click', (e) => {
+            if (e.target.matches(buttonSelector)) {
+                window.LazyComponentRenderer.renderLazy(componentName, container, props);
+            }
+        });
+    },
+
+    /**
+     * Load component on form submission
+     */
+    loadOnSubmit(formSelector, componentName, container, props = {}) {
+        document.addEventListener('submit', (e) => {
+            if (e.target.matches(formSelector)) {
+                e.preventDefault();
+                window.LazyComponentRenderer.renderLazy(componentName, container, props);
+            }
+        });
+    },
+
+    /**
+     * Load component after delay
+     */
+    loadAfterDelay(componentName, container, delay = 1000, props = {}) {
+        setTimeout(() => {
+            window.LazyComponentRenderer.renderLazy(componentName, container, props);
+        }, delay);
+    },
+
+    /**
+     * Load component on route change
+     */
+    loadOnRoute(route, componentName, container, props = {}) {
+        // This would integrate with your routing system
+        window.addEventListener('routeChange', (e) => {
+            if (e.detail.route === route) {
+                window.LazyComponentRenderer.renderLazy(componentName, container, props);
+            }
+        });
+    }
+};
+
+// Preload critical components
+window.LazyComponentLoader.preloadComponents(['loading', 'modal']);
+
 // Export components
 window.Component = Component;
 window.ComponentRegistry = window.ComponentRegistry;
