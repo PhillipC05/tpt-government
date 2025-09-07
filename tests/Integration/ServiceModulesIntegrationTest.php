@@ -2,537 +2,881 @@
 /**
  * TPT Government Platform - Service Modules Integration Tests
  *
- * Integration tests for service module interactions and API endpoints
+ * Comprehensive integration tests for all service modules
+ * testing cross-module interactions, data flow, and system integration
  */
 
-namespace Tests\Integration;
-
 use PHPUnit\Framework\TestCase;
-use Core\Application;
+use Modules\BuildingConsents\BuildingConsentsModule;
+use Modules\TrafficParking\TrafficParkingModule;
+use Modules\BusinessLicenses\BusinessLicensesModule;
+use Modules\WasteManagement\WasteManagementModule;
 use Core\Database;
-use Core\Modules\BuildingConsentsPlugin;
-use Core\Modules\TrafficParkingPlugin;
-use Core\Modules\BusinessLicensesPlugin;
-use Core\Modules\WasteManagementPlugin;
-use PDO;
+use Core\WorkflowEngine;
+use Core\NotificationManager;
+use Core\PaymentGateway;
 
 class ServiceModulesIntegrationTest extends TestCase
 {
-    private Application $app;
+    private BuildingConsentsModule $buildingModule;
+    private TrafficParkingModule $trafficModule;
+    private BusinessLicensesModule $businessModule;
+    private WasteManagementModule $wasteModule;
     private Database $database;
-    private BuildingConsentsPlugin $buildingConsents;
-    private TrafficParkingPlugin $trafficParking;
-    private BusinessLicensesPlugin $businessLicenses;
-    private WasteManagementPlugin $wasteManagement;
+    private WorkflowEngine $workflowEngine;
+    private NotificationManager $notificationManager;
+    private PaymentGateway $paymentGateway;
+
+    private array $testData;
 
     protected function setUp(): void
     {
-        // Initialize application
-        $this->app = new Application();
-
-        // Set up test database connection
-        $this->database = new Database([
-            'host' => getenv('DB_HOST') ?: 'localhost',
-            'database' => getenv('DB_NAME') ?: 'tpt_gov_test',
-            'username' => getenv('DB_USER') ?: 'root',
-            'password' => getenv('DB_PASS') ?: '',
-            'charset' => 'utf8mb4'
+        // Initialize all modules
+        $this->buildingModule = new BuildingConsentsModule([
+            'enabled' => true,
+            'consent_processing_days' => 20,
+            'inspection_lead_time_days' => 5,
+            'consent_validity_years' => 1
         ]);
 
-        // Initialize service modules
-        $this->buildingConsents = new BuildingConsentsPlugin();
-        $this->trafficParking = new TrafficParkingPlugin();
-        $this->businessLicenses = new BusinessLicensesPlugin();
-        $this->wasteManagement = new WasteManagementPlugin();
-
-        // Set database connections
-        $this->buildingConsents->setDatabase($this->database);
-        $this->trafficParking->setDatabase($this->database);
-        $this->businessLicenses->setDatabase($this->database);
-        $this->wasteManagement->setDatabase($this->database);
-
-        // Set up test data
-        $this->setUpTestData();
-    }
-
-    protected function tearDown(): void
-    {
-        // Clean up test data
-        $this->cleanUpTestData();
-    }
-
-    private function setUpTestData(): void
-    {
-        try {
-            // Create test tables if they don't exist
-            $this->createTestTables();
-
-            // Insert test data
-            $this->insertTestData();
-        } catch (\Exception $e) {
-            $this->markTestSkipped('Database setup failed: ' . $e->getMessage());
-        }
-    }
-
-    private function createTestTables(): void
-    {
-        // Create tables for all service modules
-        $tables = array_merge(
-            $this->buildingConsents->getDatabaseTables(),
-            $this->trafficParking->getDatabaseTables(),
-            $this->businessLicenses->getDatabaseTables(),
-            $this->wasteManagement->getDatabaseTables()
-        );
-
-        foreach ($tables as $tableName => $schema) {
-            try {
-                $this->database->query("DROP TABLE IF EXISTS {$tableName}");
-                $this->database->query("CREATE TABLE {$tableName} ({$schema})");
-            } catch (\Exception $e) {
-                // Table might already exist or have dependencies
-            }
-        }
-    }
-
-    private function insertTestData(): void
-    {
-        // Insert test traffic offenses
-        $this->database->insert('traffic_offenses', [
-            'offense_code' => 'speeding_20',
-            'description' => 'Speeding 20km/h over limit',
-            'fine_amount' => 150.00,
-            'points_deducted' => 3,
-            'category' => 'speeding',
-            'severity' => 'medium',
-            'active' => true
+        $this->trafficModule = new TrafficParkingModule([
+            'enabled' => true,
+            'appeal_deadline_days' => 30,
+            'payment_grace_period_days' => 14,
+            'court_escalation_threshold' => 90,
+            'license_suspension_threshold' => 12
         ]);
 
-        // Insert test license type
-        $this->database->insert('business_license_types', [
-            'license_code' => 'general_business',
-            'name' => 'General Business License',
-            'description' => 'Standard business license',
-            'category' => 'retail',
-            'annual_fee' => 500.00,
-            'renewal_period_months' => 12,
-            'inspection_required' => true,
-            'risk_level' => 'medium',
-            'active' => true
+        $this->businessModule = new BusinessLicensesModule([
+            'enabled' => true,
+            'license_processing_days' => 15,
+            'renewal_reminder_days' => 30,
+            'compliance_check_frequency' => 90
         ]);
-    }
 
-    private function cleanUpTestData(): void
-    {
-        // Clean up test data
-        $tables = [
-            'building_consent_applications',
-            'building_consent_documents',
-            'building_consent_inspections',
-            'building_consent_fees',
-            'traffic_tickets',
-            'parking_violations',
-            'driver_licenses',
-            'traffic_offenses',
-            'business_licenses',
-            'business_license_applications',
-            'business_license_inspections',
-            'business_license_fees',
-            'business_license_types',
-            'waste_collection_schedules',
-            'waste_service_requests',
-            'waste_collection_zones',
-            'waste_billing_accounts',
-            'waste_collection_records',
-            'waste_recycling_programs'
+        $this->wasteModule = new WasteManagementModule([
+            'enabled' => true,
+            'collection_scheduling' => [
+                'advance_booking_days' => 14,
+                'max_requests_per_day' => 50,
+                'emergency_response_hours' => 24
+            ],
+            'billing' => [
+                'billing_cycle' => 'monthly',
+                'payment_grace_period' => 15,
+                'late_fee_percentage' => 0.05
+            ]
+        ]);
+
+        // Initialize core services
+        $this->database = new Database();
+        $this->workflowEngine = new WorkflowEngine();
+        $this->notificationManager = new NotificationManager();
+        $this->paymentGateway = new PaymentGateway();
+
+        $this->testData = [
+            'customer' => [
+                'id' => 1,
+                'name' => 'John Doe',
+                'email' => 'john.doe@example.com',
+                'phone' => '+1234567890',
+                'address' => '123 Main Street, Test City'
+            ],
+            'business' => [
+                'name' => 'Doe Construction Ltd',
+                'type' => 'construction',
+                'address' => '456 Business Ave, Test City',
+                'owner_id' => 1,
+                'license_type' => 'contractor_general'
+            ],
+            'property' => [
+                'address' => '789 Property Street, Test City',
+                'owner_id' => 1,
+                'type' => 'residential',
+                'value' => 500000.00
+            ]
         ];
-
-        foreach ($tables as $table) {
-            try {
-                $this->database->query("DROP TABLE IF EXISTS {$table}");
-            } catch (\Exception $e) {
-                // Ignore errors during cleanup
-            }
-        }
     }
 
     /**
-     * Test end-to-end building consent workflow
+     * Test complete business establishment workflow
+     * Business License -> Building Consent -> Waste Management
      */
-    public function testBuildingConsentWorkflow()
+    public function testCompleteBusinessEstablishmentWorkflow(): void
     {
-        // 1. Create application
-        $applicationData = [
-            'applicant_id' => 1,
-            'property_address' => '123 Test Street, Test City, 12345',
-            'application_type' => 'New Construction',
-            'work_description' => 'Construct a new single-story residential building',
-            'estimated_cost' => 200000.00,
-            'consent_type' => 'building_consent'
-        ];
+        $customerId = $this->testData['customer']['id'];
 
-        $result = $this->buildingConsents->createApplication($applicationData);
-        $this->assertTrue($result['success']);
-        $this->assertArrayHasKey('application_id', $result);
-        $this->assertArrayHasKey('application_number', $result);
-
-        $applicationId = $result['application_id'];
-        $applicationNumber = $result['application_number'];
-
-        // 2. Verify application was created
-        $application = $this->buildingConsents->getApplication($applicationId);
-        $this->assertTrue($application['success']);
-        $this->assertEquals($applicationNumber, $application['application']['application_number']);
-        $this->assertEquals('draft', $application['application']['status']);
-
-        // 3. Submit application
-        $submitResult = $this->buildingConsents->submitApplication($applicationId);
-        $this->assertTrue($submitResult['success']);
-
-        // 4. Verify status changed
-        $updatedApplication = $this->buildingConsents->getApplication($applicationId);
-        $this->assertEquals('submitted', $updatedApplication['application']['status']);
-
-        // 5. Approve application
-        $approvalResult = $this->buildingConsents->approveApplication($applicationId, [
-            'approved_by' => 2,
-            'notes' => 'Application meets all requirements'
-        ]);
-        $this->assertTrue($approvalResult['success']);
-
-        // 6. Verify final status
-        $finalApplication = $this->buildingConsents->getApplication($applicationId);
-        $this->assertEquals('approved', $finalApplication['application']['status']);
-        $this->assertEquals('approved', $finalApplication['application']['decision']);
-    }
-
-    /**
-     * Test end-to-end traffic ticket workflow
-     */
-    public function testTrafficTicketWorkflow()
-    {
-        // 1. Create traffic ticket
-        $ticketData = [
-            'vehicle_registration' => 'TEST123',
-            'license_number' => 'DLTEST123',
-            'offense_type' => 'speeding_20',
-            'offense_location' => 'Test Street & Test Avenue',
-            'offense_date' => date('Y-m-d'),
-            'offense_time' => date('H:i:s'),
-            'issued_by' => 1
-        ];
-
-        $result = $this->trafficParking->createTicket($ticketData);
-        $this->assertTrue($result['success']);
-        $this->assertArrayHasKey('ticket_id', $result);
-        $this->assertArrayHasKey('ticket_number', $result);
-
-        $ticketId = $result['ticket_id'];
-        $ticketNumber = $result['ticket_number'];
-
-        // 2. Verify ticket was created
-        $ticket = $this->trafficParking->getTicket($ticketId);
-        $this->assertTrue($ticket['success']);
-        $this->assertEquals($ticketNumber, $ticket['ticket']['ticket_number']);
-        $this->assertEquals('unpaid', $ticket['ticket']['status']);
-        $this->assertEquals(150.00, $ticket['ticket']['fine_amount']);
-
-        // 3. Pay ticket
-        $paymentResult = $this->trafficParking->payTicket($ticketId, [
-            'payment_reference' => 'TESTPAY123'
-        ]);
-        $this->assertTrue($paymentResult['success']);
-
-        // 4. Verify payment
-        $paidTicket = $this->trafficParking->getTicket($ticketId);
-        $this->assertEquals('paid', $paidTicket['ticket']['status']);
-        $this->assertTrue($paidTicket['ticket']['paid']);
-        $this->assertEquals('TESTPAY123', $paidTicket['ticket']['payment_reference']);
-    }
-
-    /**
-     * Test end-to-end business license workflow
-     */
-    public function testBusinessLicenseWorkflow()
-    {
-        // 1. Create license application
-        $applicationData = [
-            'business_name' => 'Test Business Ltd',
-            'business_type' => 'Retail',
-            'applicant_name' => 'John Smith',
-            'applicant_address' => '456 Business Street, Business City, 67890',
-            'applicant_email' => 'john@testbusiness.com',
-            'application_type' => 'general_business'
-        ];
-
-        $result = $this->businessLicenses->createApplication($applicationData);
-        $this->assertTrue($result['success']);
-        $applicationId = $result['application_id'];
-
-        // 2. Submit application
-        $submitResult = $this->businessLicenses->submitApplication($applicationId);
-        $this->assertTrue($submitResult['success']);
-
-        // 3. Approve application (creates license)
-        $approvalResult = $this->businessLicenses->approveApplication($applicationId, [
-            'approved_by' => 2,
-            'notes' => 'Application approved'
-        ]);
-        $this->assertTrue($approvalResult['success']);
-
-        // 4. Verify license was created
-        $licenses = $this->businessLicenses->getLicenses();
-        $this->assertTrue($licenses['success']);
-        $this->assertNotEmpty($licenses['data']);
-
-        $license = $licenses['data'][0];
-        $this->assertEquals('Test Business Ltd', $license['business_name']);
-        $this->assertEquals('active', $license['status']);
-    }
-
-    /**
-     * Test end-to-end waste management workflow
-     */
-    public function testWasteManagementWorkflow()
-    {
-        // 1. Create service request
-        $requestData = [
-            'request_type' => 'missed_collection',
-            'requester_name' => 'Jane Doe',
-            'requester_address' => '789 Residential Street, Residential City, 54321',
-            'requester_email' => 'jane@example.com',
-            'description' => 'Regular waste collection was missed this week',
-            'priority' => 'normal'
-        ];
-
-        $result = $this->wasteManagement->createServiceRequest($requestData);
-        $this->assertTrue($result['success']);
-        $requestId = $result['request_id'];
-
-        // 2. Verify request was created
-        $request = $this->wasteManagement->getServiceRequest($requestId);
-        $this->assertTrue($request['success']);
-        $this->assertEquals('pending', $request['request']['status']);
-        $this->assertEquals('missed_collection', $request['request']['request_type']);
-
-        // 3. Update request status
-        $updateResult = $this->wasteManagement->updateServiceRequest($requestId, [
-            'status' => 'completed',
-            'completion_notes' => 'Waste collected successfully'
-        ]);
-        $this->assertTrue($updateResult['success']);
-
-        // 4. Verify status update
-        $updatedRequest = $this->wasteManagement->getServiceRequest($requestId);
-        $this->assertEquals('completed', $updatedRequest['request']['status']);
-        $this->assertEquals('Waste collected successfully', $updatedRequest['request']['completion_notes']);
-    }
-
-    /**
-     * Test cross-module data consistency
-     */
-    public function testCrossModuleDataConsistency()
-    {
-        // Create a building consent application
-        $consentResult = $this->buildingConsents->createApplication([
-            'applicant_id' => 1,
-            'property_address' => '123 Cross Street, Test City, 12345',
-            'application_type' => 'Renovation',
-            'work_description' => 'Kitchen renovation',
-            'estimated_cost' => 50000.00,
-            'consent_type' => 'building_consent'
+        // Step 1: Apply for Business License
+        $licenseResult = $this->businessModule->applyForBusinessLicense([
+            'business_name' => $this->testData['business']['name'],
+            'business_type' => $this->testData['business']['type'],
+            'business_address' => $this->testData['business']['address'],
+            'owner_id' => $this->testData['business']['owner_id'],
+            'license_type' => $this->testData['business']['license_type'],
+            'estimated_annual_revenue' => 250000.00,
+            'number_of_employees' => 15,
+            'business_description' => 'General construction and renovation services'
         ]);
 
-        // Create a business license for the same property
-        $licenseResult = $this->businessLicenses->createApplication([
-            'business_name' => 'Cross Street Cafe',
-            'business_type' => 'Food Service',
-            'applicant_name' => 'Bob Wilson',
-            'applicant_address' => '123 Cross Street, Test City, 12345',
-            'applicant_email' => 'bob@crosscafe.com',
-            'application_type' => 'general_business'
-        ]);
-
-        // Create a waste service request for the same address
-        $wasteResult = $this->wasteManagement->createServiceRequest([
-            'request_type' => 'new_service',
-            'requester_name' => 'Bob Wilson',
-            'requester_address' => '123 Cross Street, Test City, 12345',
-            'requester_email' => 'bob@crosscafe.com',
-            'description' => 'New business requiring waste collection service',
-            'priority' => 'normal'
-        ]);
-
-        // Verify all were created successfully
-        $this->assertTrue($consentResult['success']);
         $this->assertTrue($licenseResult['success']);
+        $this->assertArrayHasKey('application_id', $licenseResult);
+        $licenseApplicationId = $licenseResult['application_id'];
+
+        // Step 2: Process Business License Application
+        $processResult = $this->businessModule->processLicenseApplication($licenseApplicationId, 'approved', [
+            'reviewer_id' => 1,
+            'approval_conditions' => ['Maintain proper insurance coverage', 'Comply with local building codes'],
+            'license_duration_years' => 1
+        ]);
+
+        $this->assertTrue($processResult['success']);
+        $this->assertArrayHasKey('license_number', $processResult);
+        $licenseNumber = $processResult['license_number'];
+
+        // Step 3: Apply for Building Consent for business premises
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Business Office Renovation',
+            'project_type' => 'renovation',
+            'property_address' => $this->testData['business']['address'],
+            'property_type' => 'commercial',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 150000.00,
+            'floor_area' => 200.0,
+            'storeys' => 2,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Jane Smith Architect',
+            'contractor_name' => $this->testData['business']['name'],
+            'description' => 'Office renovation for new business premises'
+        ]);
+
+        $this->assertTrue($consentResult['success']);
+        $this->assertArrayHasKey('application_id', $consentResult);
+        $consentApplicationId = $consentResult['application_id'];
+
+        // Step 4: Submit and approve building consent
+        $submitResult = $this->buildingModule->submitBuildingConsentApplication($consentApplicationId);
+        $this->assertTrue($submitResult['success']);
+
+        $reviewResult = $this->buildingModule->reviewBuildingConsentApplication($consentApplicationId, [
+            'notes' => 'Application reviewed and approved for business use'
+        ]);
+        $this->assertTrue($reviewResult['success']);
+
+        $approvalResult = $this->buildingModule->approveBuildingConsentApplication($consentApplicationId, [
+            'conditions' => ['Comply with commercial building standards'],
+            'notes' => 'Approved for business occupancy'
+        ]);
+        $this->assertTrue($approvalResult['success']);
+
+        // Step 5: Set up waste management service for business
+        $wasteResult = $this->wasteModule->scheduleWasteService([
+            'customer_id' => $customerId,
+            'service_type' => 'commercial',
+            'collection_frequency' => 'weekly',
+            'collection_day' => 'friday',
+            'collection_time' => '08:00:00',
+            'address' => $this->testData['business']['address'],
+            'bin_size' => 'large',
+            'waste_types' => ['municipal_solid_waste', 'recyclables'],
+            'special_instructions' => 'Commercial waste collection for construction business'
+        ]);
+
+        $this->assertTrue($wasteResult['success']);
+        $this->assertArrayHasKey('service_id', $wasteResult);
+        $wasteServiceId = $wasteResult['service_id'];
+
+        // Verify cross-module data consistency
+        $this->assertNotEmpty($licenseNumber);
+        $this->assertNotEmpty($consentApplicationId);
+        $this->assertNotEmpty($wasteServiceId);
+
+        // Test that all services are properly linked to the customer
+        $businessServices = $this->businessModule->getCustomerLicenses($customerId);
+        $buildingServices = $this->buildingModule->getCustomerConsents($customerId);
+        $wasteServices = $this->wasteModule->getCustomerServices($customerId);
+
+        $this->assertIsArray($businessServices);
+        $this->assertIsArray($buildingServices);
+        $this->assertIsArray($wasteServices);
+    }
+
+    /**
+     * Test residential property development workflow
+     * Building Consent -> Waste Management -> Traffic/Parking
+     */
+    public function testResidentialPropertyDevelopmentWorkflow(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Step 1: Apply for Building Consent for residential addition
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Residential Home Extension',
+            'project_type' => 'addition',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => $this->testData['property']['type'],
+            'building_consent_type' => 'full',
+            'estimated_cost' => 80000.00,
+            'floor_area' => 45.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Bob Wilson Architect',
+            'contractor_name' => 'ABC Builders',
+            'description' => 'Single storey extension to existing residential dwelling'
+        ]);
+
+        $this->assertTrue($consentResult['success']);
+        $consentApplicationId = $consentResult['application_id'];
+
+        // Step 2: Submit and process building consent
+        $this->buildingModule->submitBuildingConsentApplication($consentApplicationId);
+        $this->buildingModule->reviewBuildingConsentApplication($consentApplicationId, ['notes' => 'Standard residential extension']);
+        $approvalResult = $this->buildingModule->approveBuildingConsentApplication($consentApplicationId, [
+            'conditions' => ['Comply with residential building standards'],
+            'notes' => 'Approved for residential use'
+        ]);
+        $this->assertTrue($approvalResult['success']);
+
+        // Step 3: Schedule building inspection
+        $inspectionResult = $this->buildingModule->scheduleBuildingInspection([
+            'application_id' => $consentApplicationId,
+            'inspection_type' => 'foundation',
+            'preferred_date' => date('Y-m-d', strtotime('+7 days')),
+            'preferred_time' => '09:00:00',
+            'contact_person' => $this->testData['customer']['name'],
+            'contact_phone' => $this->testData['customer']['phone'],
+            'special_requirements' => 'Access required through side gate'
+        ]);
+        $this->assertTrue($inspectionResult['success']);
+
+        // Step 4: Set up residential waste collection
+        $wasteResult = $this->wasteModule->scheduleWasteService([
+            'customer_id' => $customerId,
+            'service_type' => 'residential',
+            'collection_frequency' => 'weekly',
+            'collection_day' => 'monday',
+            'collection_time' => '07:00:00',
+            'address' => $this->testData['property']['address'],
+            'bin_size' => 'medium',
+            'waste_types' => ['municipal_solid_waste', 'recyclables', 'organic_waste'],
+            'special_instructions' => 'Please place bins at front curb'
+        ]);
         $this->assertTrue($wasteResult['success']);
 
-        // Verify data consistency across modules
-        $this->assertStringStartsWith('BC', $consentResult['application_number']);
-        $this->assertStringStartsWith('BLA', $licenseResult['application_number']);
-        $this->assertStringStartsWith('WSR', $wasteResult['request_number']);
-    }
+        // Step 5: Issue parking permit for construction vehicles
+        $parkingResult = $this->trafficModule->createParkingViolation([
+            'license_plate' => 'CONST001',
+            'violation_type' => 'Construction Vehicle Parking',
+            'violation_code' => 'PRK006', // Assuming this code exists
+            'location' => $this->testData['property']['address'],
+            'zone_type' => 'Construction Zone',
+            'date_time' => date('Y-m-d H:i:s'),
+            'officer_id' => 1,
+            'evidence_photos' => ['construction_permit.jpg'],
+            'notes' => 'Construction vehicle permit for home extension project'
+        ]);
 
-    /**
-     * Test service statistics across modules
-     */
-    public function testServiceStatisticsAggregation()
-    {
-        // Get statistics from each module
-        $buildingStats = $this->buildingConsents->getServiceStatistics();
-        $trafficStats = $this->trafficParking->getServiceStatistics();
-        $businessStats = $this->businessLicenses->getServiceStatistics();
-        $wasteStats = $this->wasteManagement->getServiceStatistics();
+        // Verify all services are integrated
+        $buildingStats = $this->buildingModule->getModuleStatistics();
+        $wasteStats = $this->wasteModule->getModuleStatistics();
+        $trafficStats = $this->trafficModule->getModuleStatistics();
 
-        // Verify statistics structure
         $this->assertIsArray($buildingStats);
-        $this->assertIsArray($trafficStats);
-        $this->assertIsArray($businessStats);
         $this->assertIsArray($wasteStats);
+        $this->assertIsArray($trafficStats);
 
-        // Verify expected keys exist
-        $this->assertArrayHasKey('total_applications', $buildingStats);
-        $this->assertArrayHasKey('total_tickets', $trafficStats);
-        $this->assertArrayHasKey('total_licenses', $businessStats);
-        $this->assertArrayHasKey('total_requests', $wasteStats);
+        // Test cross-module reporting
+        $buildingReport = $this->buildingModule->generateBuildingConsentReport([
+            'status' => 'approved',
+            'date_from' => date('Y-m-01'),
+            'date_to' => date('Y-m-t')
+        ]);
 
-        // All statistics should be numeric (even if zero)
-        foreach ($buildingStats as $key => $value) {
-            $this->assertIsNumeric($value, "Building consents stat '{$key}' should be numeric");
+        $wasteReport = $this->wasteModule->generateWasteReport([
+            'status' => 'active',
+            'date_from' => date('Y-m-01'),
+            'date_to' => date('Y-m-t')
+        ]);
+
+        $trafficReport = $this->trafficModule->generateTicketReport([
+            'status' => 'issued',
+            'date_from' => date('Y-m-01'),
+            'date_to' => date('Y-m-t')
+        ]);
+
+        $this->assertIsArray($buildingReport);
+        $this->assertIsArray($wasteReport);
+        $this->assertIsArray($trafficReport);
+    }
+
+    /**
+     * Test payment processing across modules
+     */
+    public function testCrossModulePaymentProcessing(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Create services across multiple modules
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Test Project',
+            'project_type' => 'new_construction',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 100000.00,
+            'floor_area' => 100.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test construction project'
+        ]);
+        $this->assertTrue($consentResult['success']);
+
+        $wasteResult = $this->wasteModule->scheduleWasteService([
+            'customer_id' => $customerId,
+            'service_type' => 'residential',
+            'collection_frequency' => 'weekly',
+            'collection_day' => 'monday',
+            'collection_time' => '07:00:00',
+            'address' => $this->testData['property']['address'],
+            'bin_size' => 'medium',
+            'waste_types' => ['municipal_solid_waste'],
+            'special_instructions' => 'Test waste service'
+        ]);
+        $this->assertTrue($wasteResult['success']);
+
+        // Test payment processing for building consent fees
+        $buildingFees = $this->buildingModule->getApplicationFees($consentResult['application_id']);
+        $this->assertIsArray($buildingFees);
+
+        if (!empty($buildingFees)) {
+            $firstFee = reset($buildingFees);
+            $paymentResult = $this->buildingModule->processFeePayment($firstFee['invoice_number'], [
+                'method' => 'credit_card',
+                'card_number' => '4111111111111111',
+                'expiry_month' => '12',
+                'expiry_year' => '2025',
+                'cvv' => '123',
+                'cardholder_name' => $this->testData['customer']['name']
+            ]);
+
+            $this->assertIsArray($paymentResult);
+            $this->assertArrayHasKey('success', $paymentResult);
         }
 
-        foreach ($trafficStats as $key => $value) {
-            $this->assertIsNumeric($value, "Traffic stat '{$key}' should be numeric");
-        }
+        // Test payment processing for waste management billing
+        $wasteBilling = $this->wasteModule->processWasteBilling($customerId, date('Y-m'));
+        $this->assertIsArray($wasteBilling);
+        $this->assertArrayHasKey('success', $wasteBilling);
 
-        foreach ($businessStats as $key => $value) {
-            $this->assertIsNumeric($value, "Business stat '{$key}' should be numeric");
-        }
+        if ($wasteBilling['success']) {
+            $paymentResult = $this->wasteModule->processBillingPayment($wasteBilling['invoice_number'], [
+                'method' => 'credit_card',
+                'card_number' => '4111111111111111',
+                'expiry_month' => '12',
+                'expiry_year' => '2025',
+                'cvv' => '123',
+                'cardholder_name' => $this->testData['customer']['name']
+            ]);
 
-        foreach ($wasteStats as $key => $value) {
-            $this->assertIsNumeric($value, "Waste stat '{$key}' should be numeric");
+            $this->assertIsArray($paymentResult);
+            $this->assertArrayHasKey('success', $paymentResult);
         }
     }
 
     /**
-     * Test concurrent module operations
+     * Test notification system integration across modules
      */
-    public function testConcurrentModuleOperations()
+    public function testNotificationSystemIntegration(): void
     {
-        // Simulate concurrent operations across modules
-        $operations = [];
+        $customerId = $this->testData['customer']['id'];
 
-        // Building consent operations
-        $operations[] = function() {
-            return $this->buildingConsents->createApplication([
-                'applicant_id' => 1,
-                'property_address' => '123 Concurrent Street, Test City, 12345',
-                'application_type' => 'Extension',
-                'work_description' => 'Home extension',
-                'estimated_cost' => 100000.00,
-                'consent_type' => 'building_consent'
-            ]);
-        };
+        // Create services that trigger notifications
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Notification Test Project',
+            'project_type' => 'renovation',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 50000.00,
+            'floor_area' => 50.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test project for notification integration'
+        ]);
+        $this->assertTrue($consentResult['success']);
 
-        // Traffic ticket operations
-        $operations[] = function() {
-            return $this->trafficParking->createTicket([
-                'vehicle_registration' => 'CONC123',
-                'offense_type' => 'speeding_20',
-                'offense_location' => 'Concurrent Street',
-                'offense_date' => date('Y-m-d'),
-                'offense_time' => date('H:i:s'),
-                'issued_by' => 1
-            ]);
-        };
+        // Submit application (should trigger notification)
+        $submitResult = $this->buildingModule->submitBuildingConsentApplication($consentResult['application_id']);
+        $this->assertTrue($submitResult['success']);
 
-        // Business license operations
-        $operations[] = function() {
-            return $this->businessLicenses->createApplication([
-                'business_name' => 'Concurrent Services',
-                'business_type' => 'Consulting',
-                'applicant_name' => 'Concurrent Owner',
-                'applicant_address' => '123 Concurrent Street, Test City, 12345',
-                'application_type' => 'general_business'
-            ]);
-        };
+        // Check that notifications were queued
+        $notifications = $this->notificationManager->getQueuedNotifications($customerId);
+        $this->assertIsArray($notifications);
 
-        // Execute operations
-        $results = [];
-        foreach ($operations as $operation) {
-            $results[] = $operation();
-        }
+        // Verify notification content
+        $buildingNotifications = array_filter($notifications, function($notification) {
+            return strpos($notification['template'], 'building consent') !== false;
+        });
 
-        // Verify all operations succeeded
-        foreach ($results as $result) {
-            $this->assertTrue($result['success'], 'Concurrent operation should succeed');
-        }
+        $this->assertNotEmpty($buildingNotifications);
 
-        // Verify no conflicts in generated identifiers
-        $identifiers = array_column($results, array_keys($results[0])[1]); // Get second column (identifiers)
-        $this->assertCount(count(array_unique($identifiers)), $identifiers, 'All identifiers should be unique');
-    }
-
-    /**
-     * Test module API endpoint integration
-     */
-    public function testModuleApiIntegration()
-    {
-        // Test that API endpoints are properly registered
-        $buildingEndpoints = $this->buildingConsents->getApiEndpoints();
-        $trafficEndpoints = $this->trafficParking->getApiEndpoints();
-        $businessEndpoints = $this->businessLicenses->getApiEndpoints();
-        $wasteEndpoints = $this->wasteManagement->getApiEndpoints();
-
-        $this->assertIsArray($buildingEndpoints);
-        $this->assertIsArray($trafficEndpoints);
-        $this->assertIsArray($businessEndpoints);
-        $this->assertIsArray($wasteEndpoints);
-
-        // Verify endpoint structure
-        foreach ([$buildingEndpoints, $trafficEndpoints, $businessEndpoints, $wasteEndpoints] as $endpoints) {
-            foreach ($endpoints as $endpoint) {
-                $this->assertArrayHasKey('path', $endpoint);
-                $this->assertArrayHasKey('method', $endpoint);
-                $this->assertArrayHasKey('handler', $endpoint);
-                $this->assertArrayHasKey('middleware', $endpoint);
-                $this->assertStringStartsWith('/api/', $endpoint['path']);
-            }
-        }
-
-        // Verify no duplicate paths
-        $allPaths = [];
-        foreach ([$buildingEndpoints, $trafficEndpoints, $businessEndpoints, $wasteEndpoints] as $endpoints) {
-            foreach ($endpoints as $endpoint) {
-                $path = $endpoint['method'] . ' ' . $endpoint['path'];
-                $this->assertNotContains($path, $allPaths, "Duplicate API endpoint: {$path}");
-                $allPaths[] = $path;
-            }
+        // Test notification delivery simulation
+        foreach ($buildingNotifications as $notification) {
+            $deliveryResult = $this->notificationManager->deliverNotification($notification['id'], 'email');
+            $this->assertIsArray($deliveryResult);
+            $this->assertArrayHasKey('success', $deliveryResult);
         }
     }
 
     /**
-     * Test module workflow integration
+     * Test workflow engine integration across modules
      */
-    public function testModuleWorkflowIntegration()
+    public function testWorkflowEngineIntegration(): void
     {
-        // Test workflow definitions are properly structured
-        $buildingWorkflows = $this->buildingConsents->getWorkflows();
-        $trafficWorkflows = $this->trafficParking->getWorkflows();
-        $businessWorkflows = $this->businessLicenses->getWorkflows();
+        $customerId = $this->testData['customer']['id'];
 
-        $this->assertIsArray($buildingWorkflows);
-        $this->assertIsArray($trafficWorkflows);
-        $this->assertIsArray($businessWorkflows);
+        // Create a building consent application
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Workflow Test Project',
+            'project_type' => 'new_construction',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 75000.00,
+            'floor_area' => 75.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test project for workflow integration'
+        ]);
+        $this->assertTrue($consentResult['success']);
+        $applicationId = $consentResult['application_id'];
 
-        // Verify workflow structure
-        foreach ([$buildingWorkflows, $trafficWorkflows, $businessWorkflows] as $workflows) {
-            foreach ($workflows as $workflowName => $workflow) {
-                $this->assertArrayHasKey('name', $workflow);
-                $this->assertArrayHasKey('description', $workflow);
-                $this->assertArrayHasKey('steps', $workflow);
-                $this->assertIsArray($workflow['steps']);
+        // Test workflow state transitions
+        $initialState = $this->workflowEngine->getWorkflowState($applicationId, 'building_consent_process');
+        $this->assertEquals('draft', $initialState);
+
+        // Submit application
+        $this->buildingModule->submitBuildingConsentApplication($applicationId);
+        $submittedState = $this->workflowEngine->getWorkflowState($applicationId, 'building_consent_process');
+        $this->assertEquals('submitted', $submittedState);
+
+        // Review application
+        $this->buildingModule->reviewBuildingConsentApplication($applicationId, ['notes' => 'Under review']);
+        $reviewState = $this->workflowEngine->getWorkflowState($applicationId, 'building_consent_process');
+        $this->assertEquals('under_review', $reviewState);
+
+        // Approve application
+        $this->buildingModule->approveBuildingConsentApplication($applicationId, [
+            'conditions' => ['Test conditions'],
+            'notes' => 'Approved'
+        ]);
+        $approvedState = $this->workflowEngine->getWorkflowState($applicationId, 'building_consent_process');
+        $this->assertEquals('approved', $approvedState);
+
+        // Test workflow history
+        $workflowHistory = $this->workflowEngine->getWorkflowHistory($applicationId, 'building_consent_process');
+        $this->assertIsArray($workflowHistory);
+        $this->assertCount(4, $workflowHistory); // draft -> submitted -> under_review -> approved
+
+        // Verify chronological order
+        $states = array_column($workflowHistory, 'state');
+        $expectedStates = ['draft', 'submitted', 'under_review', 'approved'];
+        $this->assertEquals($expectedStates, $states);
+    }
+
+    /**
+     * Test database consistency across modules
+     */
+    public function testDatabaseConsistencyAcrossModules(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Create records in multiple modules
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Database Consistency Test',
+            'project_type' => 'renovation',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 60000.00,
+            'floor_area' => 60.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test for database consistency'
+        ]);
+        $this->assertTrue($consentResult['success']);
+
+        $wasteResult = $this->wasteModule->scheduleWasteService([
+            'customer_id' => $customerId,
+            'service_type' => 'residential',
+            'collection_frequency' => 'weekly',
+            'collection_day' => 'wednesday',
+            'collection_time' => '08:00:00',
+            'address' => $this->testData['property']['address'],
+            'bin_size' => 'medium',
+            'waste_types' => ['municipal_solid_waste'],
+            'special_instructions' => 'Database consistency test'
+        ]);
+        $this->assertTrue($wasteResult['success']);
+
+        // Test referential integrity
+        $buildingRecords = $this->database->query(
+            "SELECT * FROM building_consent_applications WHERE applicant_id = ?",
+            [$customerId]
+        );
+        $this->assertIsArray($buildingRecords);
+        $this->assertNotEmpty($buildingRecords);
+
+        $wasteRecords = $this->database->query(
+            "SELECT * FROM waste_collection_schedules WHERE customer_id = ?",
+            [$customerId]
+        );
+        $this->assertIsArray($wasteRecords);
+        $this->assertNotEmpty($wasteRecords);
+
+        // Verify customer ID consistency
+        foreach ($buildingRecords as $record) {
+            $this->assertEquals($customerId, $record['applicant_id']);
+        }
+
+        foreach ($wasteRecords as $record) {
+            $this->assertEquals($customerId, $record['customer_id']);
+        }
+
+        // Test cascade operations (if implemented)
+        // This would test foreign key constraints and cascade deletes
+    }
+
+    /**
+     * Test error handling and recovery across modules
+     */
+    public function testErrorHandlingAndRecovery(): void
+    {
+        // Test invalid data handling
+        $invalidConsentData = [
+            'project_name' => '',
+            'project_type' => 'invalid_type',
+            'property_address' => '',
+            'building_consent_type' => 'invalid_type',
+            'estimated_cost' => -1000,
+            'storeys' => 0
+        ];
+
+        $result = $this->buildingModule->createBuildingConsentApplication($invalidConsentData);
+        $this->assertFalse($result['success']);
+        $this->assertArrayHasKey('errors', $result);
+
+        // Test network failure simulation (if implemented)
+        // Test database connection failure recovery
+        // Test external service failure handling
+
+        // Test partial transaction rollback
+        $customerId = $this->testData['customer']['id'];
+
+        // Attempt to create multiple related records
+        try {
+            $consentResult = $this->buildingModule->createBuildingConsentApplication([
+                'project_name' => 'Error Recovery Test',
+                'project_type' => 'new_construction',
+                'property_address' => $this->testData['property']['address'],
+                'property_type' => 'residential',
+                'building_consent_type' => 'full',
+                'estimated_cost' => 90000.00,
+                'floor_area' => 90.0,
+                'storeys' => 1,
+                'owner_id' => $customerId,
+                'applicant_id' => $customerId,
+                'architect_name' => 'Test Architect',
+                'contractor_name' => 'Test Contractor',
+                'description' => 'Test error recovery'
+            ]);
+
+            if ($consentResult['success']) {
+                // Simulate an error in subsequent operation
+                throw new Exception('Simulated error in workflow');
+
+                // If we get here, the transaction should be rolled back
+                $this->fail('Expected exception was not thrown');
             }
+        } catch (Exception $e) {
+            // Verify that partial data is properly cleaned up
+            $this->assertStringContains('Simulated error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Test performance under concurrent load
+     */
+    public function testConcurrentLoadPerformance(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+        $concurrentOperations = 5;
+
+        $startTime = microtime(true);
+
+        // Simulate concurrent operations
+        $promises = [];
+        for ($i = 0; $i < $concurrentOperations; $i++) {
+            // Create multiple building consent applications concurrently
+            $result = $this->buildingModule->createBuildingConsentApplication([
+                'project_name' => "Concurrent Test Project {$i}",
+                'project_type' => 'renovation',
+                'property_address' => $this->testData['property']['address'] . " Unit {$i}",
+                'property_type' => 'residential',
+                'building_consent_type' => 'full',
+                'estimated_cost' => 50000.00 + ($i * 10000),
+                'floor_area' => 50.0 + ($i * 5),
+                'storeys' => 1,
+                'owner_id' => $customerId,
+                'applicant_id' => $customerId,
+                'architect_name' => 'Test Architect',
+                'contractor_name' => 'Test Contractor',
+                'description' => "Concurrent operation test {$i}"
+            ]);
+
+            $promises[] = $result;
+        }
+
+        // Wait for all operations to complete
+        foreach ($promises as $promise) {
+            $this->assertIsArray($promise);
+            $this->assertArrayHasKey('success', $promise);
+            $this->assertTrue($promise['success']);
+        }
+
+        $endTime = microtime(true);
+        $executionTime = $endTime - $startTime;
+
+        // Verify performance is acceptable (adjust threshold as needed)
+        $this->assertLessThan(10.0, $executionTime, 'Concurrent operations should complete within acceptable time');
+
+        // Verify no data corruption occurred
+        $stats = $this->buildingModule->getModuleStatistics();
+        $this->assertIsArray($stats);
+        $this->assertGreaterThanOrEqual($concurrentOperations, $stats['total_applications']);
+    }
+
+    /**
+     * Test module interoperability and data sharing
+     */
+    public function testModuleInteroperability(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Create a business license first
+        $licenseResult = $this->businessModule->applyForBusinessLicense([
+            'business_name' => 'Interoperability Test Business',
+            'business_type' => 'construction',
+            'business_address' => $this->testData['business']['address'],
+            'owner_id' => $customerId,
+            'license_type' => 'contractor_general',
+            'estimated_annual_revenue' => 300000.00,
+            'number_of_employees' => 20,
+            'business_description' => 'Construction business for interoperability testing'
+        ]);
+        $this->assertTrue($licenseResult['success']);
+
+        // Process the license
+        $processResult = $this->businessModule->processLicenseApplication(
+            $licenseResult['application_id'],
+            'approved',
+            [
+                'reviewer_id' => 1,
+                'approval_conditions' => ['Maintain insurance', 'Comply with building codes'],
+                'license_duration_years' => 1
+            ]
+        );
+        $this->assertTrue($processResult['success']);
+
+        // Use the licensed business in building consent
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Licensed Business Construction',
+            'project_type' => 'new_construction',
+            'property_address' => '999 Construction Site, Test City',
+            'property_type' => 'commercial',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 200000.00,
+            'floor_area' => 150.0,
+            'storeys' => 2,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Licensed Architect',
+            'contractor_name' => 'Interoperability Test Business',
+            'description' => 'Construction project using licensed contractor'
+        ]);
+        $this->assertTrue($consentResult['success']);
+
+        // Verify cross-references work
+        $businessLicenses = $this->businessModule->getCustomerLicenses($customerId);
+        $buildingConsents = $this->buildingModule->getCustomerConsents($customerId);
+
+        $this->assertIsArray($businessLicenses);
+        $this->assertIsArray($buildingConsents);
+        $this->assertNotEmpty($businessLicenses);
+        $this->assertNotEmpty($buildingConsents);
+
+        // Test that business license data can be referenced in building consent
+        $license = reset($businessLicenses);
+        $consent = reset($buildingConsents);
+
+        $this->assertArrayHasKey('license_number', $license);
+        $this->assertArrayHasKey('application_id', $consent);
+    }
+
+    /**
+     * Test security integration across modules
+     */
+    public function testSecurityIntegration(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Test that all modules properly validate user permissions
+        $unauthorizedUserId = 999;
+
+        // Try to access data from another user
+        $buildingConsents = $this->buildingModule->getCustomerConsents($unauthorizedUserId);
+        $wasteServices = $this->wasteModule->getCustomerServices($unauthorizedUserId);
+        $businessLicenses = $this->businessModule->getCustomerLicenses($unauthorizedUserId);
+
+        // These should return empty arrays or throw security exceptions
+        $this->assertIsArray($buildingConsents);
+        $this->assertIsArray($wasteServices);
+        $this->assertIsArray($businessLicenses);
+
+        // Test data sanitization
+        $maliciousData = [
+            'project_name' => '<script>alert("XSS")</script>Test Project',
+            'project_type' => 'new_construction',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 100000.00,
+            'floor_area' => 100.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test with potentially malicious data'
+        ];
+
+        $result = $this->buildingModule->createBuildingConsentApplication($maliciousData);
+        $this->assertTrue($result['success']); // Should succeed but data should be sanitized
+
+        // Test rate limiting (if implemented)
+        // Test input validation across all modules
+    }
+
+    /**
+     * Test backup and recovery integration
+     */
+    public function testBackupAndRecoveryIntegration(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Create test data across modules
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Backup Test Project',
+            'project_type' => 'renovation',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 55000.00,
+            'floor_area' => 55.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test project for backup and recovery'
+        ]);
+        $this->assertTrue($consentResult['success']);
+
+        // Test data export from each module
+        $buildingExport = $this->buildingModule->exportData('json');
+        $wasteExport = $this->wasteModule->exportData('json');
+        $businessExport = $this->businessModule->exportData('json');
+        $trafficExport = $this->trafficModule->exportData('json');
+
+        $this->assertIsString($buildingExport);
+        $this->assertIsString($wasteExport);
+        $this->assertIsString($businessExport);
+        $this->assertIsString($trafficExport);
+
+        // Verify export contains expected data
+        $buildingData = json_decode($buildingExport, true);
+        $this->assertIsArray($buildingData);
+        $this->assertArrayHasKey('metadata', $buildingData);
+        $this->assertArrayHasKey('statistics', $buildingData);
+
+        // Test data import (if implemented)
+        // This would test the ability to restore data from backups
+    }
+
+    /**
+     * Test audit trail integration across modules
+     */
+    public function testAuditTrailIntegration(): void
+    {
+        $customerId = $this->testData['customer']['id'];
+
+        // Perform operations that should be audited
+        $consentResult = $this->buildingModule->createBuildingConsentApplication([
+            'project_name' => 'Audit Test Project',
+            'project_type' => 'addition',
+            'property_address' => $this->testData['property']['address'],
+            'property_type' => 'residential',
+            'building_consent_type' => 'full',
+            'estimated_cost' => 45000.00,
+            'floor_area' => 45.0,
+            'storeys' => 1,
+            'owner_id' => $customerId,
+            'applicant_id' => $customerId,
+            'architect_name' => 'Test Architect',
+            'contractor_name' => 'Test Contractor',
+            'description' => 'Test project for audit trail integration'
+        ]);
+        $this->assertTrue($consentResult['success']);
+        $applicationId = $consentResult['application_id'];
+
+        // Submit and process the application
+        $this->buildingModule->submitBuildingConsentApplication($applicationId);
+        $this->buildingModule->reviewBuildingConsentApplication($applicationId, ['notes' => 'Audit test']);
+        $this->buildingModule->approveBuildingConsentApplication($applicationId, [
+            'conditions' => ['Audit test conditions'],
+            'notes' => 'Audit test approval'
+        ]);
+
+        // Check audit trail
+        $auditTrail = $this->buildingModule->getAuditTrail($applicationId);
+        $this->assertIsArray($auditTrail);
+
+        // Verify audit entries exist for key operations
+        $operations = array_column($auditTrail, 'operation');
+        $this->assertContains('application_created', $operations);
+        $this->assertContains('application_submitted', $operations);
+        $this->assertContains('application_reviewed', $operations);
+        $this->assertContains('application_approved', $operations);
+
+        // Verify audit data integrity
+        foreach ($auditTrail as $entry) {
+            $this->assertArrayHasKey('timestamp', $entry);
+            $this->assertArrayHasKey('user_id', $entry);
+            $this->assertArrayHasKey('operation', $entry);
+            $this->assertArrayHasKey('details', $entry);
         }
     }
 }

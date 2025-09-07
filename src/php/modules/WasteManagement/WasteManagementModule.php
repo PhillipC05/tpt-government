@@ -746,53 +746,15 @@ class WasteManagementModule extends ServiceModule
     }
 
     /**
-     * Process billing payment
+     * Send environmental alert
      */
-    public function processBillingPayment(string $invoiceNumber, array $paymentData): array
+    private function sendEnvironmentalAlert(array $record): void
     {
-        $billing = $this->getBillingRecord($invoiceNumber);
-        if (!$billing) {
-            return [
-                'success' => false,
-                'error' => 'Invoice not found'
-            ];
-        }
-
-        if ($billing['status'] === 'paid') {
-            return [
-                'success' => false,
-                'error' => 'Invoice already paid'
-            ];
-        }
-
-        // Process payment
-        $paymentGateway = new PaymentGateway();
-        $paymentResult = $paymentGateway->processPayment([
-            'amount' => $billing['total_amount'],
-            'currency' => 'USD',
-            'method' => $paymentData['method'],
-            'description' => "Waste Management Invoice - {$invoiceNumber}",
-            'metadata' => [
-                'invoice_number' => $invoiceNumber,
-                'billing_period' => $billing['billing_period']
-            ]
+        $this->sendNotification('environmental_alert', null, [
+            'site_name' => $record['site_id'],
+            'alert_type' => $record['monitoring_type'],
+            'reading_value' => $record['reading_value'] . ' ' . $record['unit']
         ]);
-
-        if (!$paymentResult['success']) {
-            return [
-                'success' => false,
-                'error' => 'Payment processing failed'
-            ];
-        }
-
-        // Update billing status
-        $this->updateBillingStatus($invoiceNumber, 'paid', date('Y-m-d'), $paymentData['method']);
-
-        return [
-            'success' => true,
-            'transaction_id' => $paymentResult['transaction_id'],
-            'message' => 'Payment processed successfully'
-        ];
     }
 
     /**
@@ -1114,32 +1076,579 @@ class WasteManagementModule extends ServiceModule
     }
 
     /**
-     * Placeholder methods (would be implemented with actual database operations)
+     * Save collection request to database
      */
-    private function saveCollectionRequest(array $request): void {}
-    private function startCollectionWorkflow(string $requestId): void {}
-    private function sendNotification(string $type, ?int $userId, array $data): void {}
-    private function saveWasteService(array $service): void {}
-    private function scheduleInitialCollection(array $service): void {}
-    private function getCustomerServices(int $customerId): array { return []; }
-    private function saveBillingRecord(array $billing): void {}
-    private function getBillingRecord(string $invoiceNumber): ?array { return null; }
-    private function updateBillingStatus(string $invoiceNumber, string $status, string $paymentDate, string $paymentMethod): void {}
-    private function saveEnvironmentalRecord(array $record): void {}
-    private function getEnvironmentalThresholds(string $type): array { return ['min' => 0, 'max' => 100]; }
+    private function saveCollectionRequest(array $request): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO waste_collection_requests (
+                request_id, customer_id, request_type, waste_type, quantity,
+                unit, pickup_address, pickup_date, pickup_time_slot,
+                special_handling, hazardous_materials, status, estimated_cost, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $request['request_id'],
+                $request['customer_id'],
+                $request['request_type'],
+                $request['waste_type'],
+                $request['quantity'],
+                $request['unit'],
+                $request['pickup_address'],
+                $request['pickup_date'],
+                $request['pickup_time_slot'],
+                $request['special_handling'],
+                json_encode($request['hazardous_materials']),
+                $request['status'],
+                $request['estimated_cost'],
+                $request['notes']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving collection request: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Start collection workflow
+     */
+    private function startCollectionWorkflow(string $requestId): bool
+    {
+        try {
+            $workflowEngine = new WorkflowEngine();
+            return $workflowEngine->startWorkflow('waste_collection_request', $requestId);
+        } catch (\Exception $e) {
+            error_log("Error starting collection workflow: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send notification
+     */
+    private function sendNotification(string $type, ?int $userId, array $data): bool
+    {
+        try {
+            $notificationManager = new NotificationManager();
+            return $notificationManager->sendNotification($type, $userId, $data);
+        } catch (\Exception $e) {
+            error_log("Error sending notification: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save waste service to database
+     */
+    private function saveWasteService(array $service): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO waste_collection_schedules (
+                service_id, customer_id, service_type, collection_frequency,
+                collection_day, collection_time, address, coordinates,
+                bin_size, waste_types, special_instructions, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $service['service_id'],
+                $service['customer_id'],
+                $service['service_type'],
+                $service['collection_frequency'],
+                $service['collection_day'],
+                $service['collection_time'],
+                $service['address'],
+                $service['coordinates'],
+                $service['bin_size'],
+                json_encode($service['waste_types']),
+                $service['special_instructions'],
+                $service['status']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving waste service: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Schedule initial collection
+     */
+    private function scheduleInitialCollection(array $service): bool
+    {
+        try {
+            $nextCollectionDate = $this->calculateNextCollectionDate($service);
+
+            $db = Database::getInstance();
+            $sql = "UPDATE waste_collection_schedules SET created_at = ? WHERE service_id = ?";
+            return $db->execute($sql, [date('Y-m-d H:i:s'), $service['service_id']]);
+        } catch (\Exception $e) {
+            error_log("Error scheduling initial collection: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get customer services
+     */
+    private function getCustomerServices(int $customerId): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM waste_collection_schedules WHERE customer_id = ? AND status = 'active'";
+            $results = $db->fetchAll($sql, [$customerId]);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['waste_types'] = json_decode($result['waste_types'], true);
+            }
+
+            return $results;
+        } catch (\Exception $e) {
+            error_log("Error getting customer services: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Save billing record to database
+     */
+    private function saveBillingRecord(array $billing): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO waste_billing (
+                customer_id, billing_period, service_type, base_fee,
+                additional_fees, taxes, total_amount, due_date, status, invoice_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $billing['customer_id'],
+                $billing['billing_period'],
+                $billing['service_type'],
+                $billing['base_fee'],
+                $billing['additional_fees'] ?? 0.00,
+                $billing['taxes'],
+                $billing['total_amount'],
+                $billing['due_date'],
+                $billing['status'],
+                $billing['invoice_number']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving billing record: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get billing record by invoice number
+     */
+    private function getBillingRecord(string $invoiceNumber): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM waste_billing WHERE invoice_number = ?";
+            return $db->fetch($sql, [$invoiceNumber]);
+        } catch (\Exception $e) {
+            error_log("Error getting billing record: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update billing status
+     */
+    private function updateBillingStatus(string $invoiceNumber, string $status, string $paymentDate, string $paymentMethod): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "UPDATE waste_billing SET status = ?, payment_date = ?, payment_method = ? WHERE invoice_number = ?";
+            return $db->execute($sql, [$status, $paymentDate, $paymentMethod, $invoiceNumber]);
+        } catch (\Exception $e) {
+            error_log("Error updating billing status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save environmental record to database
+     */
+    private function saveEnvironmentalRecord(array $record): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO environmental_monitoring (
+                site_id, monitoring_type, sensor_id, reading_value,
+                unit, threshold_min, threshold_max, is_compliant,
+                recorded_at, recorded_by, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $record['site_id'],
+                $record['monitoring_type'],
+                $record['sensor_id'],
+                $record['reading_value'],
+                $record['unit'],
+                $record['threshold_min'],
+                $record['threshold_max'],
+                $record['is_compliant'],
+                $record['recorded_at'],
+                $record['recorded_by'],
+                $record['notes']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving environmental record: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get environmental thresholds
+     */
+    private function getEnvironmentalThresholds(string $type): array
+    {
+        return $this->environmentalThresholds[$type] ?? ['min' => 0, 'max' => 100];
+    }
+
+    /**
+     * Get waste services (API handler)
+     */
+    public function getWasteServices(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM waste_collection_schedules WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['service_type'])) {
+                $sql .= " AND service_type = ?";
+                $params[] = $filters['service_type'];
+            }
+
+            if (isset($filters['customer_id'])) {
+                $sql .= " AND customer_id = ?";
+                $params[] = $filters['customer_id'];
+            }
+
+            $sql .= " ORDER BY created_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['waste_types'] = json_decode($result['waste_types'], true);
+            }
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting waste services: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve waste services'
+            ];
+        }
+    }
+
+    /**
+     * Create waste service (API handler)
+     */
+    public function createWasteService(array $data): array
+    {
+        return $this->scheduleWasteService($data);
+    }
+
+    /**
+     * Get collection requests (API handler)
+     */
+    public function getCollectionRequests(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM waste_collection_requests WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['request_type'])) {
+                $sql .= " AND request_type = ?";
+                $params[] = $filters['request_type'];
+            }
+
+            if (isset($filters['customer_id'])) {
+                $sql .= " AND customer_id = ?";
+                $params[] = $filters['customer_id'];
+            }
+
+            $sql .= " ORDER BY created_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['hazardous_materials'] = json_decode($result['hazardous_materials'], true);
+            }
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting collection requests: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve collection requests'
+            ];
+        }
+    }
+
+    /**
+     * Create collection request (API handler)
+     */
+    public function createCollectionRequest(array $data): array
+    {
+        return $this->createCollectionRequest($data);
+    }
+
+    /**
+     * Get billing info (API handler)
+     */
+    public function getBillingInfo(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM waste_billing WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['customer_id'])) {
+                $sql .= " AND customer_id = ?";
+                $params[] = $filters['customer_id'];
+            }
+
+            if (isset($filters['billing_period'])) {
+                $sql .= " AND billing_period = ?";
+                $params[] = $filters['billing_period'];
+            }
+
+            $sql .= " ORDER BY created_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting billing info: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve billing information'
+            ];
+        }
+    }
+
+    /**
+     * Get disposal sites (API handler)
+     */
+    public function getDisposalSites(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM waste_disposal_sites WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['site_type'])) {
+                $sql .= " AND site_type = ?";
+                $params[] = $filters['site_type'];
+            }
+
+            $sql .= " ORDER BY site_name ASC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['waste_types_accepted'] = json_decode($result['waste_types_accepted'], true);
+                $result['operating_hours'] = json_decode($result['operating_hours'], true);
+                $result['contact_info'] = json_decode($result['contact_info'], true);
+                $result['environmental_permits'] = json_decode($result['environmental_permits'], true);
+            }
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting disposal sites: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve disposal sites'
+            ];
+        }
+    }
+
+    /**
+     * Get environmental data (API handler)
+     */
+    public function getEnvironmentalData(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM environmental_monitoring WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['site_id'])) {
+                $sql .= " AND site_id = ?";
+                $params[] = $filters['site_id'];
+            }
+
+            if (isset($filters['monitoring_type'])) {
+                $sql .= " AND monitoring_type = ?";
+                $params[] = $filters['monitoring_type'];
+            }
+
+            if (isset($filters['is_compliant'])) {
+                $sql .= " AND is_compliant = ?";
+                $params[] = $filters['is_compliant'];
+            }
+
+            if (isset($filters['date_from'])) {
+                $sql .= " AND recorded_at >= ?";
+                $params[] = $filters['date_from'];
+            }
+
+            if (isset($filters['date_to'])) {
+                $sql .= " AND recorded_at <= ?";
+                $params[] = $filters['date_to'];
+            }
+
+            $sql .= " ORDER BY recorded_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting environmental data: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve environmental data'
+            ];
+        }
+    }
 
     /**
      * Get module statistics
      */
     public function getModuleStatistics(): array
     {
-        return [
-            'total_collection_requests' => 0, // Would query database
-            'active_services' => 0,
-            'total_revenue' => 0.00,
-            'environmental_compliance_rate' => 0.0,
-            'average_collection_time' => 0,
-            'recycling_diversion_rate' => 0.0
-        ];
+        try {
+            $db = Database::getInstance();
+
+            // Get collection request statistics
+            $requestStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_requests,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_requests,
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_requests,
+                    AVG(estimated_cost) as average_cost
+                FROM waste_collection_requests
+            ");
+
+            // Get service statistics
+            $serviceStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_services,
+                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_services
+                FROM waste_collection_schedules
+            ");
+
+            // Get billing statistics
+            $billingStats = $db->fetch("
+                SELECT
+                    SUM(total_amount) as total_revenue,
+                    COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices
+                FROM waste_billing
+            ");
+
+            // Get environmental compliance statistics
+            $environmentalStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_readings,
+                    COUNT(CASE WHEN is_compliant = 1 THEN 1 END) as compliant_readings
+                FROM environmental_monitoring
+            ");
+
+            $complianceRate = $environmentalStats['total_readings'] > 0 ?
+                round(($environmentalStats['compliant_readings'] / $environmentalStats['total_readings']) * 100, 2) : 0;
+
+            return [
+                'total_collection_requests' => $requestStats['total_requests'] ?? 0,
+                'completed_requests' => $requestStats['completed_requests'] ?? 0,
+                'pending_requests' => $requestStats['pending_requests'] ?? 0,
+                'active_services' => $serviceStats['active_services'] ?? 0,
+                'total_revenue' => $billingStats['total_revenue'] ?? 0.00,
+                'environmental_compliance_rate' => $complianceRate,
+                'average_request_cost' => round($requestStats['average_cost'] ?? 0, 2)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting module statistics: " . $e->getMessage());
+            return [
+                'total_collection_requests' => 0,
+                'completed_requests' => 0,
+                'pending_requests' => 0,
+                'active_services' => 0,
+                'total_revenue' => 0.00,
+                'environmental_compliance_rate' => 0.0,
+                'average_request_cost' => 0.00
+            ];
+        }
     }
 }

@@ -1,612 +1,620 @@
 /**
  * TPT Government Platform - Service Modules End-to-End Tests
  *
- * Cypress tests for complete user workflows across service modules
+ * Comprehensive E2E tests for all service modules
+ * testing complete user journeys and browser-based functionality
  */
 
-describe('Government Service Modules E2E Tests', () => {
+describe('TPT Government Platform - Service Modules E2E Tests', () => {
+    const baseUrl = Cypress.config('baseUrl') || 'http://localhost:3000';
+
+    // Test user credentials
+    const testUser = {
+        email: 'test.user@example.com',
+        password: 'TestPassword123!',
+        firstName: 'Test',
+        lastName: 'User'
+    };
+
+    // Test data
+    const testData = {
+        business: {
+            name: 'E2E Test Construction Ltd',
+            type: 'construction',
+            address: '123 Test Business St, Test City, TC 12345',
+            revenue: 250000,
+            employees: 15,
+            description: 'General construction and renovation services for E2E testing'
+        },
+        property: {
+            address: '456 Test Property Ave, Test City, TC 12345',
+            type: 'residential',
+            value: 500000
+        },
+        project: {
+            name: 'E2E Test Home Extension',
+            type: 'addition',
+            cost: 75000,
+            area: 45,
+            storeys: 1,
+            description: 'Single storey extension for additional living space'
+        }
+    };
+
+    before(() => {
+        // Reset database and create test user
+        cy.request('POST', `${baseUrl}/api/test/reset-database`);
+        cy.request('POST', `${baseUrl}/api/test/create-user`, testUser);
+    });
+
     beforeEach(() => {
-        // Visit the application
-        cy.visit('/')
+        // Login before each test
+        cy.visit(`${baseUrl}/login`);
+        cy.get('[data-cy="email"]').type(testUser.email);
+        cy.get('[data-cy="password"]').type(testUser.password);
+        cy.get('[data-cy="login-button"]').click();
+        cy.url().should('not.include', '/login');
+    });
 
-        // Login as test user (assuming login functionality exists)
-        cy.login('test@example.com', 'password')
-    })
+    describe('Complete Business Establishment Journey', () => {
+        it('should complete full business establishment workflow', () => {
+            // Step 1: Navigate to business licenses
+            cy.visit(`${baseUrl}/services/business-licenses`);
+            cy.contains('Business Licenses').should('be.visible');
 
-    describe('Building Consents Module', () => {
-        it('should complete full building consent application workflow', () => {
-            // Navigate to building consents
-            cy.visit('/services/building-consents')
-            cy.contains('Building Consents').should('be.visible')
+            // Step 2: Start new business license application
+            cy.get('[data-cy="new-application-button"]').click();
+            cy.url().should('include', '/business-licenses/apply');
 
-            // Start new application
-            cy.contains('New Application').click()
-
-            // Fill out application form
-            cy.get('[data-cy="property-address"]').type('123 Test Street, Test City, 12345')
-            cy.get('[data-cy="application-type"]').select('New Construction')
-            cy.get('[data-cy="work-description"]').type('Construct a new two-story residential building with garage')
-            cy.get('[data-cy="estimated-cost"]').type('250000')
-            cy.get('[data-cy="consent-type"]').select('building_consent')
-
-            // Upload documents
-            cy.get('[data-cy="document-upload"]').selectFile([
-                'cypress/fixtures/test-plans.pdf',
-                'cypress/fixtures/test-drawings.pdf'
-            ])
-
-            // Submit application
-            cy.contains('Submit Application').click()
-
-            // Verify application was created
-            cy.contains('Application submitted successfully').should('be.visible')
-            cy.contains('BC2025').should('be.visible') // Application number
-
-            // Check application status
-            cy.contains('Status: Draft').should('be.visible')
-
-            // Submit for processing
-            cy.contains('Submit for Review').click()
-            cy.contains('Application submitted for review').should('be.visible')
-
-            // Verify status changed
-            cy.contains('Status: Submitted').should('be.visible')
-        })
-
-        it('should handle document uploads correctly', () => {
-            cy.visit('/services/building-consents')
-
-            // Start new application
-            cy.contains('New Application').click()
-
-            // Upload various document types
-            cy.get('[data-cy="document-upload"]').selectFile([
-                'cypress/fixtures/site-plan.pdf',
-                'cypress/fixtures/floor-plans.pdf',
-                'cypress/fixtures/elevation-drawings.pdf',
-                'cypress/fixtures/specification.pdf'
-            ])
-
-            // Verify documents are listed
-            cy.contains('site-plan.pdf').should('be.visible')
-            cy.contains('floor-plans.pdf').should('be.visible')
-            cy.contains('elevation-drawings.pdf').should('be.visible')
-            cy.contains('specification.pdf').should('be.visible')
-
-            // Verify file size and type validation
-            cy.get('[data-cy="file-size-warning"]').should('not.exist')
-            cy.get('[data-cy="file-type-error"]').should('not.exist')
-        })
-
-        it('should validate required fields', () => {
-            cy.visit('/services/building-consents')
-            cy.contains('New Application').click()
-
-            // Try to submit without required fields
-            cy.contains('Submit Application').click()
-
-            // Check validation errors
-            cy.contains('Property address is required').should('be.visible')
-            cy.contains('Application type is required').should('be.visible')
-            cy.contains('Work description is required').should('be.visible')
-            cy.contains('Estimated cost is required').should('be.visible')
-            cy.contains('Consent type is required').should('be.visible')
-        })
-
-        it('should display application history and status', () => {
-            cy.visit('/services/building-consents')
-
-            // Click on existing application
-            cy.contains('BC202500001').click()
-
-            // Verify application details are displayed
-            cy.contains('Application Details').should('be.visible')
-            cy.contains('Property Address').should('be.visible')
-            cy.contains('Application Status').should('be.visible')
-
-            // Check status timeline
-            cy.contains('Application Timeline').should('be.visible')
-            cy.contains('Draft').should('be.visible')
-            cy.contains('Submitted').should('be.visible')
-
-            // Verify documents section
-            cy.contains('Supporting Documents').should('be.visible')
-        })
-    })
-
-    describe('Traffic & Parking Module', () => {
-        it('should complete traffic ticket payment workflow', () => {
-            // Navigate to traffic tickets
-            cy.visit('/services/traffic-tickets')
-            cy.contains('Traffic Tickets').should('be.visible')
-
-            // Search for ticket
-            cy.get('[data-cy="ticket-search"]').type('TT20250100001')
-            cy.contains('Search').click()
-
-            // Verify ticket details
-            cy.contains('TT20250100001').should('be.visible')
-            cy.contains('Speeding 20km/h over limit').should('be.visible')
-            cy.contains('$150.00').should('be.visible')
-            cy.contains('Status: Unpaid').should('be.visible')
-
-            // Click pay ticket
-            cy.contains('Pay Ticket').click()
-
-            // Fill payment details
-            cy.get('[data-cy="payment-method"]').select('credit_card')
-            cy.get('[data-cy="card-number"]').type('4111111111111111')
-            cy.get('[data-cy="expiry-date"]').type('1225')
-            cy.get('[data-cy="cvv"]').type('123')
-            cy.get('[data-cy="cardholder-name"]').type('John Doe')
-
-            // Submit payment
-            cy.contains('Pay $150.00').click()
-
-            // Verify payment success
-            cy.contains('Payment successful').should('be.visible')
-            cy.contains('Receipt #').should('be.visible')
-
-            // Verify ticket status updated
-            cy.contains('Status: Paid').should('be.visible')
-        })
-
-        it('should handle ticket appeal process', () => {
-            cy.visit('/services/traffic-tickets')
-
-            // Find unpaid ticket
-            cy.contains('TT20250100002').click()
-
-            // Click appeal ticket
-            cy.contains('Appeal Ticket').click()
-
-            // Fill appeal form
-            cy.get('[data-cy="appeal-reason"]').select('dispute_violation')
-            cy.get('[data-cy="appeal-details"]').type('I was not exceeding the speed limit. The radar may have been miscalibrated.')
-            cy.get('[data-cy="contact-phone"]').type('555-0123')
-            cy.get('[data-cy="contact-email"]').type('driver@example.com')
-
-            // Upload evidence
-            cy.get('[data-cy="evidence-upload"]').selectFile('cypress/fixtures/appeal-evidence.pdf')
-
-            // Submit appeal
-            cy.contains('Submit Appeal').click()
-
-            // Verify appeal submission
-            cy.contains('Appeal submitted successfully').should('be.visible')
-            cy.contains('Appeal Status: Under Review').should('be.visible')
-        })
-
-        it('should display parking violations correctly', () => {
-            cy.visit('/services/parking-violations')
-            cy.contains('Parking Violations').should('be.visible')
-
-            // Verify violation list
-            cy.get('[data-cy="violation-list"]').should('be.visible')
-            cy.contains('PV20250100001').should('be.visible')
-            cy.contains('No Parking Zone').should('be.visible')
-            cy.contains('$50.00').should('be.visible')
-
-            // Click on violation for details
-            cy.contains('PV20250100001').click()
-
-            // Verify violation details
-            cy.contains('Violation Details').should('be.visible')
-            cy.contains('Location: Main Street').should('be.visible')
-            cy.contains('Date:').should('be.visible')
-            cy.contains('Time:').should('be.visible')
-        })
-
-        it('should handle bulk ticket payments', () => {
-            cy.visit('/services/traffic-tickets')
-
-            // Select multiple tickets
-            cy.get('[data-cy="ticket-checkbox"]').first().check()
-            cy.get('[data-cy="ticket-checkbox"]').eq(1).check()
-
-            // Click bulk pay
-            cy.contains('Pay Selected ($300.00)').click()
-
-            // Verify bulk payment interface
-            cy.contains('Pay Multiple Tickets').should('be.visible')
-            cy.contains('Total Amount: $300.00').should('be.visible')
-            cy.contains('2 tickets selected').should('be.visible')
-
-            // Complete payment
-            cy.get('[data-cy="payment-method"]').select('bank_transfer')
-            cy.contains('Complete Payment').click()
-
-            // Verify bulk payment success
-            cy.contains('All payments processed successfully').should('be.visible')
-        })
-    })
-
-    describe('Business Licenses Module', () => {
-        it('should complete business license application workflow', () => {
-            cy.visit('/services/business-licenses')
-            cy.contains('Business Licenses').should('be.visible')
-
-            // Start new application
-            cy.contains('Apply for License').click()
-
-            // Fill business details
-            cy.get('[data-cy="business-name"]').type('Test Cafe & Restaurant')
-            cy.get('[data-cy="business-type"]').select('Food Service')
-            cy.get('[data-cy="business-category"]').select('Restaurant')
-            cy.get('[data-cy="owner-name"]').type('Sarah Johnson')
-            cy.get('[data-cy="owner-address"]').type('456 Business Ave, Business City, 67890')
-            cy.get('[data-cy="owner-phone"]').type('555-0199')
-            cy.get('[data-cy="owner-email"]').type('sarah@testcafe.com')
-            cy.get('[data-cy="business-address"]').type('456 Business Ave, Business City, 67890')
-            cy.get('[data-cy="license-type"]').select('general_business')
-
-            // Business details
-            cy.get('[data-cy="abn"]').type('12345678901')
-            cy.get('[data-cy="gst-registered"]').check()
-            cy.get('[data-cy="employee-count"]').type('15')
-            cy.get('[data-cy="annual-turnover"]').type('500000')
+            // Step 3: Fill out business license application
+            cy.get('[data-cy="business-name"]').type(testData.business.name);
+            cy.get('[data-cy="business-type"]').select(testData.business.type);
+            cy.get('[data-cy="business-address"]').type(testData.business.address);
+            cy.get('[data-cy="estimated-revenue"]').type(testData.business.revenue.toString());
+            cy.get('[data-cy="employee-count"]').type(testData.business.employees.toString());
+            cy.get('[data-cy="business-description"]').type(testData.business.description);
 
             // Upload required documents
-            cy.get('[data-cy="business-plan-upload"]').selectFile('cypress/fixtures/business-plan.pdf')
-            cy.get('[data-cy="financial-statements-upload"]').selectFile('cypress/fixtures/financial-statements.pdf')
-            cy.get('[data-cy="insurance-upload"]').selectFile('cypress/fixtures/insurance-certificate.pdf')
+            cy.get('[data-cy="business-plan-upload"]').selectFile('cypress/fixtures/test-business-plan.pdf', { force: true });
+            cy.get('[data-cy="insurance-certificate-upload"]').selectFile('cypress/fixtures/test-insurance.pdf', { force: true });
+
+            // Step 4: Submit application
+            cy.get('[data-cy="submit-application"]').click();
+            cy.contains('Application submitted successfully').should('be.visible');
+
+            // Get application ID from URL or response
+            cy.url().should('match', /\/business-licenses\/application\/[A-Z]{2}\d{4}\d{6}$/);
+            cy.url().then(url => {
+                const applicationId = url.split('/').pop();
+
+                // Step 5: Verify application status
+                cy.contains('Application Status: Submitted').should('be.visible');
+                cy.contains('Processing Time: 15 days').should('be.visible');
+
+                // Step 6: Navigate to building consents
+                cy.visit(`${baseUrl}/services/building-consents`);
+                cy.contains('Building Consents').should('be.visible');
+
+                // Step 7: Start building consent application
+                cy.get('[data-cy="new-consent-button"]').click();
+                cy.url().should('include', '/building-consents/apply');
+
+                // Step 8: Fill out building consent application
+                cy.get('[data-cy="project-name"]').type(testData.project.name);
+                cy.get('[data-cy="project-type"]').select(testData.project.type);
+                cy.get('[data-cy="property-address"]').type(testData.property.address);
+                cy.get('[data-cy="property-type"]').select(testData.property.type);
+                cy.get('[data-cy="consent-type"]').select('full');
+                cy.get('[data-cy="estimated-cost"]').type(testData.project.cost.toString());
+                cy.get('[data-cy="floor-area"]').type(testData.project.area.toString());
+                cy.get('[data-cy="storeys"]').type(testData.project.storeys.toString());
+                cy.get('[data-cy="architect-name"]').type('Test Architect');
+                cy.get('[data-cy="contractor-name"]').type(testData.business.name);
+                cy.get('[data-cy="project-description"]').type(testData.project.description);
+
+                // Upload plans and documents
+                cy.get('[data-cy="site-plan-upload"]').selectFile('cypress/fixtures/test-site-plan.pdf', { force: true });
+                cy.get('[data-cy="floor-plans-upload"]').selectFile('cypress/fixtures/test-floor-plans.pdf', { force: true });
+                cy.get('[data-cy="elevations-upload"]').selectFile('cypress/fixtures/test-elevations.pdf', { force: true });
+                cy.get('[data-cy="specifications-upload"]').selectFile('cypress/fixtures/test-specifications.pdf', { force: true });
+
+                // Step 9: Submit building consent
+                cy.get('[data-cy="submit-consent"]').click();
+                cy.contains('Building consent application submitted successfully').should('be.visible');
+
+                // Step 10: Navigate to waste management
+                cy.visit(`${baseUrl}/services/waste-management`);
+                cy.contains('Waste Management').should('be.visible');
+
+                // Step 11: Set up waste collection service
+                cy.get('[data-cy="new-service-button"]').click();
+                cy.get('[data-cy="service-type"]').select('commercial');
+                cy.get('[data-cy="collection-frequency"]').select('weekly');
+                cy.get('[data-cy="collection-day"]').select('friday');
+                cy.get('[data-cy="collection-time"]').type('08:00');
+                cy.get('[data-cy="service-address"]').type(testData.business.address);
+                cy.get('[data-cy="bin-size"]').select('large');
+                cy.get('[data-cy="waste-types"]').select(['municipal_solid_waste', 'recyclables']);
+                cy.get('[data-cy="special-instructions"]').type('Commercial waste for construction business');
+
+                // Step 12: Submit waste service request
+                cy.get('[data-cy="submit-service"]').click();
+                cy.contains('Waste collection service scheduled successfully').should('be.visible');
+
+                // Step 13: Verify dashboard shows all services
+                cy.visit(`${baseUrl}/dashboard`);
+                cy.contains('My Services').should('be.visible');
+                cy.contains(testData.business.name).should('be.visible');
+                cy.contains(testData.project.name).should('be.visible');
+                cy.contains('Commercial Waste Collection').should('be.visible');
+            });
+        });
+    });
+
+    describe('Building Consent Application Process', () => {
+        it('should handle building consent application lifecycle', () => {
+            // Navigate to building consents
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.get('[data-cy="new-consent-button"]').click();
+
+            // Fill out application
+            cy.get('[data-cy="project-name"]').type('E2E Building Test');
+            cy.get('[data-cy="project-type"]').select('new_construction');
+            cy.get('[data-cy="property-address"]').type('789 Construction St, Test City');
+            cy.get('[data-cy="property-type"]').select('residential');
+            cy.get('[data-cy="consent-type"]').select('full');
+            cy.get('[data-cy="estimated-cost"]').type('100000');
+            cy.get('[data-cy="floor-area"]').type('100');
+            cy.get('[data-cy="storeys"]').type('2');
+            cy.get('[data-cy="architect-name"]').type('E2E Architect');
+            cy.get('[data-cy="contractor-name"]').type('E2E Builder');
+            cy.get('[data-cy="project-description"]').type('Two storey residential construction');
 
             // Submit application
-            cy.contains('Submit Application').click()
+            cy.get('[data-cy="submit-consent"]').click();
+            cy.contains('Building consent application submitted successfully').should('be.visible');
 
-            // Verify submission
-            cy.contains('Application submitted successfully').should('be.visible')
-            cy.contains('BLA2025').should('be.visible') // Application number
+            // Verify application appears in list
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.contains('E2E Building Test').should('be.visible');
+            cy.contains('Draft').should('be.visible');
 
-            // Check application status
-            cy.contains('Status: Draft').should('be.visible')
-        })
+            // Test application editing
+            cy.contains('E2E Building Test').click();
+            cy.get('[data-cy="edit-application"]').click();
+            cy.get('[data-cy="project-description"]').clear().type('Updated two storey residential construction');
+            cy.get('[data-cy="save-changes"]').click();
+            cy.contains('Application updated successfully').should('be.visible');
 
-        it('should handle license renewal process', () => {
-            cy.visit('/services/business-licenses')
+            // Test document upload
+            cy.get('[data-cy="upload-documents"]').click();
+            cy.get('[data-cy="file-upload"]').selectFile('cypress/fixtures/test-document.pdf', { force: true });
+            cy.get('[data-cy="upload-button"]').click();
+            cy.contains('Document uploaded successfully').should('be.visible');
+        });
+    });
 
-            // Find license due for renewal
-            cy.contains('Renewal Due').click()
+    describe('Traffic & Parking Services', () => {
+        it('should handle traffic ticket and parking violation workflows', () => {
+            // Navigate to traffic tickets
+            cy.visit(`${baseUrl}/services/traffic-tickets`);
 
-            // Verify renewal interface
-            cy.contains('License Renewal').should('be.visible')
-            cy.contains('Current Expiry:').should('be.visible')
-            cy.contains('Renewal Fee: $500.00').should('be.visible')
+            // Check for existing tickets
+            cy.contains('Traffic Tickets').should('be.visible');
 
-            // Confirm renewal
-            cy.contains('Renew License').click()
+            // Test license plate lookup
+            cy.get('[data-cy="license-lookup"]').type('ABC123');
+            cy.get('[data-cy="search-button"]').click();
 
-            // Verify renewal success
-            cy.contains('License renewed successfully').should('be.visible')
-            cy.contains('New Expiry Date:').should('be.visible')
-        })
+            // Should show ticket history or no tickets found
+            cy.get('body').should('contain', 'No tickets found').or('contain', 'Ticket History');
 
-        it('should display license compliance status', () => {
-            cy.visit('/services/business-licenses')
+            // Navigate to parking violations
+            cy.visit(`${baseUrl}/services/parking-violations`);
+            cy.contains('Parking Violations').should('be.visible');
 
-            // Click on active license
-            cy.contains('BL202500001').click()
+            // Test appeal submission
+            cy.get('[data-cy="new-appeal-button"]').click();
+            cy.get('[data-cy="ticket-number"]').type('TT2024001');
+            cy.get('[data-cy="appellant-name"]').type('John Doe');
+            cy.get('[data-cy="appellant-email"]').type('john.doe@example.com');
+            cy.get('[data-cy="appeal-reason"]').type('I was not speeding. The speed limit sign was obscured by construction.');
+            cy.get('[data-cy="evidence-upload"]').selectFile('cypress/fixtures/test-evidence.jpg', { force: true });
+            cy.get('[data-cy="submit-appeal"]').click();
+            cy.contains('Appeal submitted successfully').should('be.visible');
+        });
+    });
 
-            // Verify compliance dashboard
-            cy.contains('Compliance Status').should('be.visible')
-            cy.contains('Last Inspection:').should('be.visible')
-            cy.contains('Next Inspection:').should('be.visible')
-            cy.contains('Risk Rating:').should('be.visible')
+    describe('Waste Management Services', () => {
+        it('should handle waste collection requests and service management', () => {
+            // Navigate to waste management
+            cy.visit(`${baseUrl}/services/waste-management`);
+            cy.contains('Waste Management').should('be.visible');
 
-            // Check inspection history
-            cy.contains('Inspection History').should('be.visible')
-            cy.get('[data-cy="inspection-list"]').should('be.visible')
-        })
+            // Test collection request
+            cy.get('[data-cy="new-request-button"]').click();
+            cy.get('[data-cy="request-type"]').select('one_time');
+            cy.get('[data-cy="waste-type"]').select('construction_debris');
+            cy.get('[data-cy="quantity"]').type('5');
+            cy.get('[data-cy="unit"]').select('tons');
+            cy.get('[data-cy="pickup-address"]').type('123 Construction Site, Test City');
+            cy.get('[data-cy="pickup-date"]').type('2024-12-20');
+            cy.get('[data-cy="pickup-time-slot"]').select('morning');
+            cy.get('[data-cy="special-handling"]').check();
+            cy.get('[data-cy="description"]').type('Construction waste from demolition project');
 
-        it('should validate business license requirements', () => {
-            cy.visit('/services/business-licenses')
-            cy.contains('Apply for License').click()
+            cy.get('[data-cy="submit-request"]').click();
+            cy.contains('Collection request submitted successfully').should('be.visible');
 
-            // Try to submit without required fields
-            cy.contains('Submit Application').click()
+            // Test service scheduling
+            cy.get('[data-cy="schedule-service-button"]').click();
+            cy.get('[data-cy="service-type"]').select('residential');
+            cy.get('[data-cy="collection-frequency"]').select('weekly');
+            cy.get('[data-cy="collection-day"]').select('monday');
+            cy.get('[data-cy="collection-time"]').type('07:00');
+            cy.get('[data-cy="service-address"]').type('456 Residential St, Test City');
+            cy.get('[data-cy="bin-size"]').select('medium');
+            cy.get('[data-cy="waste-types"]').select(['municipal_solid_waste', 'recyclables', 'organic_waste']);
 
-            // Check validation
-            cy.contains('Business name is required').should('be.visible')
-            cy.contains('Business type is required').should('be.visible')
-            cy.contains('Owner name is required').should('be.visible')
-            cy.contains('Business address is required').should('be.visible')
-            cy.contains('License type is required').should('be.visible')
-        })
-    })
+            cy.get('[data-cy="submit-service"]').click();
+            cy.contains('Waste collection service scheduled successfully').should('be.visible');
 
-    describe('Waste Management Module', () => {
-        it('should submit waste service request', () => {
-            cy.visit('/services/waste-management')
-            cy.contains('Waste Management').should('be.visible')
+            // Test billing
+            cy.visit(`${baseUrl}/services/waste-management/billing`);
+            cy.contains('Waste Management Billing').should('be.visible');
+            cy.get('[data-cy="billing-period"]').select('current_month');
+            cy.get('[data-cy="generate-bill"]').click();
+            cy.contains('Bill generated successfully').should('be.visible');
+        });
+    });
 
-            // Click request service
-            cy.contains('Request Service').click()
+    describe('Business License Management', () => {
+        it('should handle business license application and renewal', () => {
+            // Navigate to business licenses
+            cy.visit(`${baseUrl}/services/business-licenses`);
+            cy.get('[data-cy="new-application-button"]').click();
 
-            // Fill service request form
-            cy.get('[data-cy="request-type"]').select('missed_collection')
-            cy.get('[data-cy="requester-name"]').type('Mike Thompson')
-            cy.get('[data-cy="requester-address"]').type('789 Residential St, Residential City, 54321')
-            cy.get('[data-cy="requester-phone"]').type('555-0155')
-            cy.get('[data-cy="requester-email"]').type('mike@example.com')
-            cy.get('[data-cy="request-description"]').type('Regular waste collection was missed on Tuesday. Bin was full and overflowing.')
-            cy.get('[data-cy="priority"]').select('high')
+            // Fill out application
+            cy.get('[data-cy="business-name"]').type('E2E Business License Test');
+            cy.get('[data-cy="business-type"]').select('retail');
+            cy.get('[data-cy="business-address"]').type('789 Business Ave, Test City');
+            cy.get('[data-cy="license-type"]').select('retail_general');
+            cy.get('[data-cy="estimated-revenue"]').type('150000');
+            cy.get('[data-cy="employee-count"]').type('8');
+            cy.get('[data-cy="business-description"]').type('General retail store selling various goods');
 
-            // Add photos if available
-            cy.get('[data-cy="photo-upload"]').selectFile([
-                'cypress/fixtures/waste-bin-photo1.jpg',
-                'cypress/fixtures/waste-bin-photo2.jpg'
-            ])
+            // Upload documents
+            cy.get('[data-cy="business-plan-upload"]').selectFile('cypress/fixtures/test-business-plan.pdf', { force: true });
+            cy.get('[data-cy="financial-statements-upload"]').selectFile('cypress/fixtures/test-financials.pdf', { force: true });
+            cy.get('[data-cy="owner-id-upload"]').selectFile('cypress/fixtures/test-id.pdf', { force: true });
 
-            // Submit request
-            cy.contains('Submit Request').click()
+            // Submit application
+            cy.get('[data-cy="submit-application"]').click();
+            cy.contains('Business license application submitted successfully').should('be.visible');
 
-            // Verify submission
-            cy.contains('Service request submitted successfully').should('be.visible')
-            cy.contains('WSR2025').should('be.visible') // Request number
-            cy.contains('Estimated response time: 24-48 hours').should('be.visible')
-        })
+            // Test renewal process
+            cy.visit(`${baseUrl}/services/business-licenses`);
+            cy.contains('E2E Business License Test').click();
+            cy.get('[data-cy="renew-license"]').click();
+            cy.get('[data-cy="renewal-reason"]').type('Annual renewal');
+            cy.get('[data-cy="submit-renewal"]').click();
+            cy.contains('License renewal submitted successfully').should('be.visible');
+        });
+    });
 
-        it('should display collection schedules', () => {
-            cy.visit('/services/waste-management')
+    describe('Payment Processing', () => {
+        it('should handle payments across all service modules', () => {
+            // Navigate to payments section
+            cy.visit(`${baseUrl}/payments`);
+            cy.contains('Payment History').should('be.visible');
 
-            // Check collection schedule section
-            cy.contains('Collection Schedules').should('be.visible')
+            // Test payment method setup
+            cy.get('[data-cy="add-payment-method"]').click();
+            cy.get('[data-cy="card-number"]').type('4111111111111111');
+            cy.get('[data-cy="expiry-month"]').select('12');
+            cy.get('[data-cy="expiry-year"]').select('2025');
+            cy.get('[data-cy="cvv"]').type('123');
+            cy.get('[data-cy="cardholder-name"]').type('Test User');
+            cy.get('[data-cy="save-card"]').click();
+            cy.contains('Payment method saved successfully').should('be.visible');
 
-            // Verify schedule display
-            cy.contains('Monday').should('be.visible')
-            cy.contains('Wednesday').should('be.visible')
-            cy.contains('Friday').should('be.visible')
+            // Test outstanding payments
+            cy.get('[data-cy="outstanding-payments"]').click();
+            cy.get('body').should('contain', 'Outstanding Payments').or('contain', 'No outstanding payments');
 
-            // Check collection zones
-            cy.contains('Your Zone:').should('be.visible')
-            cy.contains('Collection Time:').should('be.visible')
-        })
+            // Test payment history
+            cy.get('[data-cy="payment-history"]').click();
+            cy.get('body').should('contain', 'Payment History').or('contain', 'No payment history');
+        });
+    });
 
-        it('should show recycling information', () => {
-            cy.visit('/services/waste-management')
+    describe('Notifications and Communication', () => {
+        it('should handle notifications and communication features', () => {
+            // Navigate to notifications
+            cy.visit(`${baseUrl}/notifications`);
+            cy.contains('Notifications').should('be.visible');
 
-            // Navigate to recycling section
-            cy.contains('Recycling').click()
+            // Test notification preferences
+            cy.get('[data-cy="notification-settings"]').click();
+            cy.get('[data-cy="email-notifications"]').should('be.checked');
+            cy.get('[data-cy="sms-notifications"]').check();
+            cy.get('[data-cy="push-notifications"]').check();
+            cy.get('[data-cy="save-preferences"]').click();
+            cy.contains('Notification preferences saved').should('be.visible');
 
-            // Verify recycling programs
-            cy.contains('Recycling Programs').should('be.visible')
-            cy.get('[data-cy="recycling-program-list"]').should('be.visible')
+            // Test notification history
+            cy.get('[data-cy="notification-history"]').click();
+            cy.get('body').should('contain', 'Notification History').or('contain', 'No notifications');
 
-            // Check specific programs
-            cy.contains('Paper Recycling').should('be.visible')
-            cy.contains('Plastic Recycling').should('be.visible')
-            cy.contains('Garden Waste').should('be.visible')
-        })
+            // Test message center
+            cy.visit(`${baseUrl}/messages`);
+            cy.contains('Messages').should('be.visible');
+            cy.get('[data-cy="compose-message"]').click();
+            cy.get('[data-cy="recipient"]').type('admin@gov.example.com');
+            cy.get('[data-cy="subject"]').type('Test Message from E2E');
+            cy.get('[data-cy="message-body"]').type('This is a test message from E2E testing suite.');
+            cy.get('[data-cy="send-message"]').click();
+            cy.contains('Message sent successfully').should('be.visible');
+        });
+    });
 
-        it('should handle billing account lookup', () => {
-            cy.visit('/services/waste-management')
+    describe('Reports and Analytics', () => {
+        it('should generate and display reports correctly', () => {
+            // Navigate to reports
+            cy.visit(`${baseUrl}/reports`);
+            cy.contains('Reports & Analytics').should('be.visible');
 
-            // Navigate to billing section
-            cy.contains('Billing').click()
+            // Test building consent reports
+            cy.get('[data-cy="building-consent-reports"]').click();
+            cy.get('[data-cy="report-type"]').select('consent_overview');
+            cy.get('[data-cy="date-from"]').type('2024-01-01');
+            cy.get('[data-cy="date-to"]').type('2024-12-31');
+            cy.get('[data-cy="generate-report"]').click();
+            cy.contains('Report generated successfully').should('be.visible');
 
-            // Enter account number
-            cy.get('[data-cy="account-lookup"]').type('WASTE001234')
-            cy.contains('Look Up Account').click()
+            // Test traffic reports
+            cy.get('[data-cy="traffic-reports"]').click();
+            cy.get('[data-cy="report-type"]').select('traffic_ticket_summary');
+            cy.get('[data-cy="generate-report"]').click();
+            cy.contains('Report generated successfully').should('be.visible');
 
-            // Verify account details
-            cy.contains('Account Details').should('be.visible')
-            cy.contains('Balance:').should('be.visible')
-            cy.contains('Next Billing Date:').should('be.visible')
-            cy.contains('Service Type:').should('be.visible')
-        })
+            // Test waste management reports
+            cy.get('[data-cy="waste-reports"]').click();
+            cy.get('[data-cy="report-type"]').select('waste_collection_summary');
+            cy.get('[data-cy="generate-report"]').click();
+            cy.contains('Report generated successfully').should('be.visible');
 
-        it('should validate service request fields', () => {
-            cy.visit('/services/waste-management')
-            cy.contains('Request Service').click()
+            // Test business license reports
+            cy.get('[data-cy="business-reports"]').click();
+            cy.get('[data-cy="report-type"]').select('license_overview');
+            cy.get('[data-cy="generate-report"]').click();
+            cy.contains('Report generated successfully').should('be.visible');
+        });
+    });
 
-            // Try to submit without required fields
-            cy.contains('Submit Request').click()
+    describe('Search and Navigation', () => {
+        it('should handle search and navigation features', () => {
+            // Test global search
+            cy.get('[data-cy="global-search"]').type('building consent');
+            cy.get('[data-cy="search-button"]').click();
+            cy.get('body').should('contain', 'Search Results').or('contain', 'No results found');
 
-            // Check validation errors
-            cy.contains('Request type is required').should('be.visible')
-            cy.contains('Your name is required').should('be.visible')
-            cy.contains('Property address is required').should('be.visible')
-            cy.contains('Description is required').should('be.visible')
-        })
-    })
+            // Test service navigation
+            cy.visit(`${baseUrl}/services`);
+            cy.contains('Government Services').should('be.visible');
 
-    describe('Cross-Module Integration', () => {
-        it('should handle property-related services consistently', () => {
-            const propertyAddress = '123 Integration Street, Test City, 12345'
+            // Test navigation between services
+            cy.get('[data-cy="building-consents-link"]').click();
+            cy.url().should('include', '/building-consents');
+            cy.go('back');
 
-            // Create building consent for property
-            cy.visit('/services/building-consents')
-            cy.contains('New Application').click()
-            cy.get('[data-cy="property-address"]').type(propertyAddress)
-            cy.get('[data-cy="application-type"]').select('Renovation')
-            cy.get('[data-cy="work-description"]').type('Kitchen and bathroom renovation')
-            cy.get('[data-cy="estimated-cost"]').type('75000')
-            cy.get('[data-cy="consent-type"]').select('building_consent')
-            cy.contains('Submit Application').click()
+            cy.get('[data-cy="business-licenses-link"]').click();
+            cy.url().should('include', '/business-licenses');
+            cy.go('back');
 
-            // Create business license for same property
-            cy.visit('/services/business-licenses')
-            cy.contains('Apply for License').click()
-            cy.get('[data-cy="business-name"]').type('Integration Services Ltd')
-            cy.get('[data-cy="business-type"]').select('Consulting')
-            cy.get('[data-cy="owner-name"]').type('Integration Owner')
-            cy.get('[data-cy="owner-address"]').type(propertyAddress)
-            cy.get('[data-cy="business-address"]').type(propertyAddress)
-            cy.get('[data-cy="license-type"]').select('general_business')
-            cy.contains('Submit Application').click()
+            cy.get('[data-cy="traffic-parking-link"]').click();
+            cy.url().should('include', '/traffic-parking');
+            cy.go('back');
 
-            // Create waste service request for same property
-            cy.visit('/services/waste-management')
-            cy.contains('Request Service').click()
-            cy.get('[data-cy="request-type"]').select('new_service')
-            cy.get('[data-cy="requester-name"]').type('Integration Owner')
-            cy.get('[data-cy="requester-address"]').type(propertyAddress)
-            cy.get('[data-cy="request-description"]').type('New business setup requiring waste collection service')
-            cy.contains('Submit Request').click()
+            cy.get('[data-cy="waste-management-link"]').click();
+            cy.url().should('include', '/waste-management');
+        });
+    });
 
-            // Verify all services show same property address
-            cy.visit('/dashboard')
-            cy.contains('My Services').should('be.visible')
-            cy.contains(propertyAddress).should('be.visible')
-        })
+    describe('Accessibility and Responsiveness', () => {
+        it('should be accessible and responsive', () => {
+            // Test keyboard navigation
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.get('body').tab().tab().tab(); // Navigate through focusable elements
 
-        it('should maintain consistent user experience across modules', () => {
-            // Test common UI patterns across all modules
-            const modules = [
-                '/services/building-consents',
-                '/services/traffic-tickets',
-                '/services/business-licenses',
-                '/services/waste-management'
-            ]
+            // Test screen reader compatibility
+            cy.get('[data-cy="new-consent-button"]').should('have.attr', 'aria-label');
+            cy.get('[data-cy="project-name"]').should('have.attr', 'aria-describedby');
 
-            modules.forEach(moduleUrl => {
-                cy.visit(moduleUrl)
+            // Test mobile responsiveness
+            cy.viewport('iphone-6');
+            cy.visit(`${baseUrl}/dashboard`);
+            cy.contains('Dashboard').should('be.visible');
 
-                // Check common UI elements
-                cy.get('[data-cy="page-title"]').should('be.visible')
-                cy.get('[data-cy="user-menu"]').should('be.visible')
-                cy.get('[data-cy="navigation"]').should('be.visible')
+            // Test tablet responsiveness
+            cy.viewport('ipad-2');
+            cy.visit(`${baseUrl}/services`);
+            cy.contains('Government Services').should('be.visible');
 
-                // Check responsive design
-                cy.viewport('iphone-6')
-                cy.get('[data-cy="mobile-menu"]').should('be.visible')
-                cy.viewport('macbook-15')
-                cy.get('[data-cy="desktop-nav"]').should('be.visible')
-            })
-        })
-
-        it('should handle notifications consistently', () => {
-            // Submit applications across modules
-            cy.visit('/services/building-consents')
-            cy.contains('New Application').click()
-            cy.get('[data-cy="property-address"]').type('123 Notification St, Test City, 12345')
-            cy.get('[data-cy="application-type"]').select('Extension')
-            cy.get('[data-cy="work-description"]').type('Home extension')
-            cy.get('[data-cy="estimated-cost"]').type('100000')
-            cy.get('[data-cy="consent-type"]').select('building_consent')
-            cy.contains('Submit Application').click()
-
-            // Check notifications
-            cy.get('[data-cy="notification-bell"]').click()
-            cy.contains('Building consent application submitted').should('be.visible')
-            cy.contains('Application #BC2025').should('be.visible')
-        })
-    })
-
-    describe('Performance and Accessibility', () => {
-        it('should load service pages within acceptable time', () => {
-            const pages = [
-                '/services/building-consents',
-                '/services/traffic-tickets',
-                '/services/business-licenses',
-                '/services/waste-management'
-            ]
-
-            pages.forEach(page => {
-                cy.visit(page, { timeout: 10000 })
-                cy.contains(/Building|Traffic|Business|Waste/i).should('be.visible')
-            })
-        })
-
-        it('should be keyboard navigable', () => {
-            cy.visit('/services/building-consents')
-
-            // Test tab navigation
-            cy.get('body').tab()
-            cy.focused().should('have.attr', 'data-cy', 'new-application-btn')
-
-            cy.focused().type('{enter}')
-            cy.get('[data-cy="application-form"]').should('be.visible')
-
-            // Test form navigation
-            cy.focused().tab()
-            cy.focused().should('have.attr', 'data-cy', 'property-address')
-        })
-
-        it('should have proper ARIA labels and roles', () => {
-            cy.visit('/services/traffic-tickets')
-
-            // Check ARIA labels
-            cy.get('[aria-label]').should('have.length.greaterThan', 5)
-            cy.get('[role]').should('have.length.greaterThan', 3)
-
-            // Check form labels
-            cy.get('label').should('have.length.greaterThan', 10)
-            cy.get('input[aria-labelledby]').should('exist')
-        })
-
-        it('should be mobile responsive', () => {
-            cy.visit('/services/business-licenses')
-
-            // Test mobile viewport
-            cy.viewport('iphone-6')
-            cy.get('[data-cy="mobile-header"]').should('be.visible')
-            cy.get('[data-cy="mobile-menu-toggle"]').should('be.visible')
-
-            // Test tablet viewport
-            cy.viewport('ipad-2')
-            cy.get('[data-cy="tablet-layout"]').should('be.visible')
-
-            // Test desktop viewport
-            cy.viewport('macbook-15')
-            cy.get('[data-cy="desktop-layout"]').should('be.visible')
-        })
-    })
+            // Test desktop responsiveness
+            cy.viewport('macbook-15');
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.contains('Building Consents').should('be.visible');
+        });
+    });
 
     describe('Error Handling and Edge Cases', () => {
-        it('should handle network errors gracefully', () => {
-            // Simulate network failure
-            cy.intercept('POST', '/api/building-consents', { forceNetworkError: true })
+        it('should handle errors and edge cases gracefully', () => {
+            // Test invalid form submission
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.get('[data-cy="new-consent-button"]').click();
+            cy.get('[data-cy="submit-consent"]').click();
+            cy.contains('Please fill in all required fields').should('be.visible');
 
-            cy.visit('/services/building-consents')
-            cy.contains('New Application').click()
-            cy.get('[data-cy="property-address"]').type('123 Error St, Test City, 12345')
-            cy.get('[data-cy="application-type"]').select('New Construction')
-            cy.get('[data-cy="work-description"]').type('Test application')
-            cy.get('[data-cy="estimated-cost"]').type('50000')
-            cy.get('[data-cy="consent-type"]').select('building_consent')
-            cy.contains('Submit Application').click()
+            // Test file upload validation
+            cy.get('[data-cy="site-plan-upload"]').selectFile('cypress/fixtures/invalid-file.txt', { force: true });
+            cy.contains('Invalid file type').should('be.visible');
 
-            // Verify error handling
-            cy.contains('Network error').should('be.visible')
-            cy.contains('Please try again').should('be.visible')
-        })
+            // Test network error simulation
+            cy.intercept('POST', '**/api/building-consents', { forceNetworkError: true });
+            cy.get('[data-cy="project-name"]').type('Network Error Test');
+            cy.get('[data-cy="submit-consent"]').click();
+            cy.contains('Network error').should('be.visible');
 
-        it('should handle session timeout', () => {
-            // Simulate session timeout
+            // Test session timeout
             cy.window().then((win) => {
-                win.localStorage.setItem('session_expired', 'true')
-            })
+                // Simulate session expiry
+                win.localStorage.removeItem('auth_token');
+            });
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.url().should('include', '/login');
+        });
+    });
 
-            cy.visit('/services/traffic-tickets')
+    describe('Performance and Load Testing', () => {
+        it('should handle performance under load', () => {
+            const startTime = Date.now();
 
-            // Should redirect to login
-            cy.url().should('include', '/login')
-            cy.contains('Session expired').should('be.visible')
-        })
+            // Perform multiple rapid operations
+            for (let i = 0; i < 5; i++) {
+                cy.visit(`${baseUrl}/services/building-consents`);
+                cy.get('[data-cy="new-consent-button"]').click();
+                cy.get('[data-cy="project-name"]').type(`Performance Test ${i}`);
+                cy.get('[data-cy="project-type"]').select('renovation');
+                cy.get('[data-cy="property-address"]').type(`Test Address ${i}`);
+                cy.get('[data-cy="property-type"]').select('residential');
+                cy.get('[data-cy="consent-type"]').select('full');
+                cy.get('[data-cy="estimated-cost"]').type('50000');
+                cy.get('[data-cy="submit-consent"]').click();
+                cy.contains('Building consent application submitted successfully').should('be.visible');
+            }
 
-        it('should handle invalid file uploads', () => {
-            cy.visit('/services/building-consents')
-            cy.contains('New Application').click()
+            const endTime = Date.now();
+            const duration = endTime - startTime;
 
-            // Try to upload invalid file type
-            cy.get('[data-cy="document-upload"]').selectFile('cypress/fixtures/invalid-file.exe')
+            // Should complete within reasonable time (adjust threshold as needed)
+            expect(duration).to.be.lessThan(30000); // 30 seconds for 5 operations
+        });
+    });
 
-            // Verify error message
-            cy.contains('Invalid file type').should('be.visible')
-            cy.contains('Allowed formats: PDF, DOC, DOCX, JPG, PNG').should('be.visible')
-        })
+    describe('Security Testing', () => {
+        it('should handle security scenarios', () => {
+            // Test XSS prevention
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.get('[data-cy="new-consent-button"]').click();
+            cy.get('[data-cy="project-name"]').type('<script>alert("XSS")</script>');
+            cy.get('[data-cy="submit-consent"]').click();
+            cy.on('window:alert', () => {
+                throw new Error('XSS vulnerability detected');
+            });
 
-        it('should handle large file uploads', () => {
-            cy.visit('/services/business-licenses')
-            cy.contains('Apply for License').click()
+            // Test SQL injection prevention
+            cy.get('[data-cy="project-name"]').clear().type("'; DROP TABLE users; --");
+            cy.get('[data-cy="submit-consent"]').click();
+            cy.contains('Invalid input').should('be.visible');
 
-            // Try to upload very large file
-            cy.get('[data-cy="document-upload"]').selectFile('cypress/fixtures/large-file.pdf')
+            // Test CSRF protection
+            cy.window().then((win) => {
+                // Attempt to make request without CSRF token
+                cy.request({
+                    method: 'POST',
+                    url: `${baseUrl}/api/building-consents`,
+                    body: { test: 'data' },
+                    failOnStatusCode: false
+                }).then((response) => {
+                    expect(response.status).to.be.oneOf([403, 419]); // CSRF error codes
+                });
+            });
 
-            // Verify file size warning
-            cy.contains('File size exceeds limit').should('be.visible')
-            cy.contains('Maximum file size: 10MB').should('be.visible')
-        })
-    })
-})
+            // Test rate limiting
+            for (let i = 0; i < 10; i++) {
+                cy.request({
+                    method: 'GET',
+                    url: `${baseUrl}/api/services`,
+                    failOnStatusCode: false
+                });
+            }
+            cy.request({
+                method: 'GET',
+                url: `${baseUrl}/api/services`,
+                failOnStatusCode: false
+            }).then((response) => {
+                if (response.status === 429) {
+                    cy.log('Rate limiting is working correctly');
+                }
+            });
+        });
+    });
+
+    describe('Multi-language Support', () => {
+        it('should support multiple languages', () => {
+            // Test language switching
+            cy.visit(`${baseUrl}/settings`);
+            cy.get('[data-cy="language-selector"]').select('es'); // Spanish
+            cy.contains('Configuración').should('be.visible');
+
+            // Test that services are available in selected language
+            cy.visit(`${baseUrl}/services`);
+            cy.contains('Servicios Gubernamentales').should('be.visible');
+
+            // Switch back to English
+            cy.get('[data-cy="language-selector"]').select('en');
+            cy.contains('Government Services').should('be.visible');
+        });
+    });
+
+    describe('Offline Functionality', () => {
+        it('should work offline when supported', () => {
+            // Test service worker registration
+            cy.window().then((win) => {
+                expect(win.navigator.serviceWorker).to.exist;
+            });
+
+            // Test offline indicator
+            cy.visit(`${baseUrl}/dashboard`);
+            cy.get('body').should('not.have.class', 'offline');
+
+            // Simulate going offline
+            cy.window().then((win) => {
+                win.dispatchEvent(new Event('offline'));
+            });
+
+            // Check offline indicator appears
+            cy.get('body').should('have.class', 'offline');
+            cy.contains('You are currently offline').should('be.visible');
+
+            // Test offline form submission (should be queued)
+            cy.visit(`${baseUrl}/services/building-consents`);
+            cy.get('[data-cy="new-consent-button"]').click();
+            cy.get('[data-cy="project-name"]').type('Offline Test Project');
+            cy.get('[data-cy="submit-consent"]').click();
+            cy.contains('Request queued for submission when online').should('be.visible');
+        });
+    });
+
+    describe('Integration with External Systems', () => {
+        it('should integrate with external systems', () => {
+            // Test payment gateway integration
+            cy.visit(`${baseUrl}/payments`);
+            cy.get('[data-cy="add-payment-method"]').click();
+            cy.get('[data-cy="payment-gateway"]').should('contain', 'Stripe').and('contain', 'PayPal');
+
+            // Test document storage integration
+            cy.visit(`${baseUrl}/documents`);
+            cy.get('[data-cy="upload-document"]').selectFile('cypress/fixtures/test-document.pdf', { force: true });
+            cy.get('[data-cy="upload-button"]').click();
+            cy.contains('Document uploaded to cloud storage').should('be.visible');
+
+            // Test email service integration
+            cy.visit(`${baseUrl}/messages`);
+            cy.get('[data-cy="compose-message"]').click();
+            cy.get('[data-cy="send-message"]').click();
+            cy.contains('Message sent via email service').should('be.visible');
+        });
+    });
+});

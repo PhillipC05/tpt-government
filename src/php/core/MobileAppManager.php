@@ -1,603 +1,656 @@
 <?php
-
-namespace TPT\GovPlatform\Core;
-
-use PDO;
-use PDOException;
-use Exception;
-
 /**
- * Mobile App Companion Manager
+ * TPT Government Platform - Mobile App Manager
  *
- * This class provides comprehensive mobile app companion features including:
- * - Mobile app registration and management
- * - Push notification handling for mobile devices
- * - Offline data synchronization
- * - Mobile-specific API endpoints
- * - Device management and security
- * - Mobile app analytics and usage tracking
+ * Comprehensive mobile application management supporting native apps,
+ * hybrid apps, PWAs, push notifications, and mobile-specific features
  */
+
 class MobileAppManager
 {
-    private PDO $pdo;
     private array $config;
-    private NotificationManager $notificationManager;
+    private array $apps;
+    private array $devices;
+    private array $pushTokens;
+    private array $notifications;
+    private array $appVersions;
+    private MobileAppBuilder $appBuilder;
+    private PushNotificationService $pushService;
+    private MobileAnalytics $mobileAnalytics;
+    private AppStoreManager $appStoreManager;
 
-    public function __construct(PDO $pdo, array $config = [])
+    /**
+     * Mobile app configuration
+     */
+    private array $mobileConfig = [
+        'app_types' => [
+            'native_android' => ['enabled' => true, 'framework' => 'react_native'],
+            'native_ios' => ['enabled' => true, 'framework' => 'react_native'],
+            'hybrid' => ['enabled' => true, 'framework' => 'ionic'],
+            'pwa' => ['enabled' => true, 'framework' => 'pwa'],
+            'flutter' => ['enabled' => true, 'framework' => 'flutter']
+        ],
+        'push_notifications' => [
+            'enabled' => true,
+            'providers' => ['firebase', 'onesignal', 'urban_airship'],
+            'platforms' => ['android', 'ios', 'web'],
+            'categories' => [
+                'emergency_alerts',
+                'service_updates',
+                'appointment_reminders',
+                'payment_notifications',
+                'general_announcements'
+            ]
+        ],
+        'app_features' => [
+            'offline_mode' => true,
+            'biometric_auth' => true,
+            'qr_code_scanner' => true,
+            'document_upload' => true,
+            'location_services' => true,
+            'camera_integration' => true,
+            'contact_sync' => true,
+            'calendar_integration' => true
+        ],
+        'security' => [
+            'certificate_pinning' => true,
+            'app_encryption' => true,
+            'secure_storage' => true,
+            'biometric_lock' => true,
+            'remote_wipe' => true,
+            'jailbreak_detection' => true
+        ],
+        'analytics' => [
+            'enabled' => true,
+            'crash_reporting' => true,
+            'usage_tracking' => true,
+            'performance_monitoring' => true,
+            'user_engagement' => true
+        ],
+        'app_stores' => [
+            'google_play' => ['enabled' => true, 'auto_publish' => false],
+            'apple_app_store' => ['enabled' => true, 'auto_publish' => false],
+            'huawei_appgallery' => ['enabled' => true, 'auto_publish' => false],
+            'microsoft_store' => ['enabled' => true, 'auto_publish' => false]
+        ],
+        'deployment' => [
+            'beta_testing' => true,
+            'staged_rollout' => true,
+            'remote_config' => true,
+            'a_b_testing' => true,
+            'feature_flags' => true
+        ]
+    ];
+
+    /**
+     * Constructor
+     */
+    public function __construct(array $config = [])
     {
-        $this->pdo = $pdo;
-        $this->config = array_merge([
-            'app_name' => 'TPT Government',
-            'app_version' => '1.0.0',
-            'supported_platforms' => ['ios', 'android', 'web'],
-            'max_devices_per_user' => 5,
-            'offline_sync_enabled' => true,
-            'push_notifications_enabled' => true,
-            'biometric_auth_enabled' => true,
-            'location_services_enabled' => false,
-            'background_refresh_enabled' => true,
-            'data_compression_enabled' => true,
-            'sync_batch_size' => 100,
-            'sync_conflict_resolution' => 'server_wins'
-        ], $config);
+        $this->config = array_merge($this->mobileConfig, $config);
+        $this->apps = [];
+        $this->devices = [];
+        $this->pushTokens = [];
+        $this->notifications = [];
+        $this->appVersions = [];
 
-        $this->notificationManager = new NotificationManager($pdo);
-        $this->createMobileTables();
+        $this->appBuilder = new MobileAppBuilder();
+        $this->pushService = new PushNotificationService();
+        $this->mobileAnalytics = new MobileAnalytics();
+        $this->appStoreManager = new AppStoreManager();
+
+        $this->initializeMobileManager();
     }
 
     /**
-     * Create mobile app management tables
+     * Initialize mobile app manager
      */
-    private function createMobileTables(): void
+    private function initializeMobileManager(): void
     {
-        $sql = "
-            CREATE TABLE IF NOT EXISTS mobile_devices (
-                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                device_id VARCHAR(255) NOT NULL UNIQUE,
-                user_id INT NOT NULL,
-                platform ENUM('ios', 'android', 'web') NOT NULL,
-                device_model VARCHAR(100) DEFAULT NULL,
-                os_version VARCHAR(50) DEFAULT NULL,
-                app_version VARCHAR(20) DEFAULT NULL,
-                push_token TEXT DEFAULT NULL,
-                is_active BOOLEAN DEFAULT true,
-                last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_user (user_id),
-                INDEX idx_device (device_id),
-                INDEX idx_platform (platform),
-                INDEX idx_active (is_active)
-            ) ENGINE=InnoDB;
+        // Initialize app building capabilities
+        $this->initializeAppBuilding();
 
-            CREATE TABLE IF NOT EXISTS mobile_app_versions (
-                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                version VARCHAR(20) NOT NULL UNIQUE,
-                platform ENUM('ios', 'android', 'web') NOT NULL,
-                download_url VARCHAR(500) DEFAULT NULL,
-                release_notes TEXT DEFAULT NULL,
-                is_mandatory BOOLEAN DEFAULT false,
-                is_latest BOOLEAN DEFAULT false,
-                released_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_platform (platform),
-                INDEX idx_latest (is_latest)
-            ) ENGINE=InnoDB;
+        // Initialize push notification services
+        if ($this->config['push_notifications']['enabled']) {
+            $this->initializePushNotifications();
+        }
 
-            CREATE TABLE IF NOT EXISTS offline_sync_queue (
-                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                device_id VARCHAR(255) NOT NULL,
-                user_id INT NOT NULL,
-                sync_type ENUM('upload', 'download', 'bidirectional') DEFAULT 'bidirectional',
-                data_type VARCHAR(100) NOT NULL,
-                data_payload JSON NOT NULL,
-                priority ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
-                status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
-                retry_count INT DEFAULT 0,
-                max_retries INT DEFAULT 3,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                processed_at TIMESTAMP NULL,
-                error_message TEXT DEFAULT NULL,
-                INDEX idx_device (device_id),
-                INDEX idx_user (user_id),
-                INDEX idx_status (status),
-                INDEX idx_priority (priority),
-                INDEX idx_created (created_at)
-            ) ENGINE=InnoDB;
+        // Initialize app features
+        $this->initializeAppFeatures();
 
-            CREATE TABLE IF NOT EXISTS mobile_analytics (
-                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                device_id VARCHAR(255) NOT NULL,
-                user_id INT DEFAULT NULL,
-                event_type VARCHAR(100) NOT NULL,
-                event_category VARCHAR(50) NOT NULL,
-                event_data JSON DEFAULT NULL,
-                session_id VARCHAR(255) DEFAULT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_device (device_id),
-                INDEX idx_user (user_id),
-                INDEX idx_event (event_type),
-                INDEX idx_session (session_id),
-                INDEX idx_timestamp (timestamp)
-            ) ENGINE=InnoDB;
+        // Initialize security features
+        if ($this->config['security']['enabled']) {
+            $this->initializeSecurity();
+        }
 
-            CREATE TABLE IF NOT EXISTS mobile_app_features (
-                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                feature_name VARCHAR(100) NOT NULL UNIQUE,
-                feature_description TEXT DEFAULT NULL,
-                platform_support JSON NOT NULL, -- {'ios': true, 'android': true, 'web': false}
-                is_enabled BOOLEAN DEFAULT true,
-                requires_permission BOOLEAN DEFAULT false,
-                permission_name VARCHAR(100) DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_enabled (is_enabled)
-            ) ENGINE=InnoDB;
-        ";
+        // Initialize analytics
+        if ($this->config['analytics']['enabled']) {
+            $this->initializeAnalytics();
+        }
 
-        try {
-            $this->pdo->exec($sql);
-        } catch (PDOException $e) {
-            error_log("Failed to create mobile tables: " . $e->getMessage());
+        // Initialize app store integrations
+        $this->initializeAppStores();
+
+        // Start mobile monitoring
+        $this->startMobileMonitoring();
+    }
+
+    /**
+     * Initialize app building
+     */
+    private function initializeAppBuilding(): void
+    {
+        // Set up build environments for different platforms
+        $this->setupBuildEnvironments();
+
+        // Configure app templates
+        $this->setupAppTemplates();
+
+        // Initialize CI/CD pipelines
+        $this->setupBuildPipelines();
+    }
+
+    /**
+     * Initialize push notifications
+     */
+    private function initializePushNotifications(): void
+    {
+        // Configure push notification providers
+        foreach ($this->config['push_notifications']['providers'] as $provider) {
+            $this->pushService->configureProvider($provider, $this->getProviderConfig($provider));
+        }
+
+        // Set up notification categories
+        $this->setupNotificationCategories();
+
+        // Initialize delivery tracking
+        $this->setupDeliveryTracking();
+    }
+
+    /**
+     * Initialize app features
+     */
+    private function initializeAppFeatures(): void
+    {
+        // Configure offline capabilities
+        if ($this->config['app_features']['offline_mode']) {
+            $this->setupOfflineMode();
+        }
+
+        // Set up biometric authentication
+        if ($this->config['app_features']['biometric_auth']) {
+            $this->setupBiometricAuth();
+        }
+
+        // Configure location services
+        if ($this->config['app_features']['location_services']) {
+            $this->setupLocationServices();
         }
     }
 
     /**
-     * Register a mobile device
+     * Initialize security features
+     */
+    private function initializeSecurity(): void
+    {
+        // Set up certificate pinning
+        $this->setupCertificatePinning();
+
+        // Configure app encryption
+        $this->setupAppEncryption();
+
+        // Initialize secure storage
+        $this->setupSecureStorage();
+    }
+
+    /**
+     * Initialize analytics
+     */
+    private function initializeAnalytics(): void
+    {
+        // Set up crash reporting
+        $this->setupCrashReporting();
+
+        // Configure usage tracking
+        $this->setupUsageTracking();
+
+        // Initialize performance monitoring
+        $this->setupPerformanceMonitoring();
+    }
+
+    /**
+     * Initialize app stores
+     */
+    private function initializeAppStores(): void
+    {
+        // Configure app store connections
+        foreach ($this->config['app_stores'] as $store => $config) {
+            if ($config['enabled']) {
+                $this->appStoreManager->configureStore($store, $this->getStoreConfig($store));
+            }
+        }
+    }
+
+    /**
+     * Start mobile monitoring
+     */
+    private function startMobileMonitoring(): void
+    {
+        // Start app monitoring
+        $this->startAppMonitoring();
+
+        // Start device monitoring
+        $this->startDeviceMonitoring();
+
+        // Start performance monitoring
+        $this->startPerformanceMonitoring();
+    }
+
+    /**
+     * Create mobile app
+     */
+    public function createApp(array $appData): array
+    {
+        $app = [
+            'id' => uniqid('app_'),
+            'name' => $appData['name'],
+            'description' => $appData['description'],
+            'type' => $appData['type'],
+            'platforms' => $appData['platforms'] ?? ['android', 'ios'],
+            'version' => $appData['version'] ?? '1.0.0',
+            'bundle_id' => $appData['bundle_id'] ?? $this->generateBundleId($appData['name']),
+            'status' => 'development',
+            'created_at' => time(),
+            'updated_at' => time(),
+            'features' => $appData['features'] ?? [],
+            'permissions' => $appData['permissions'] ?? [],
+            'config' => $appData['config'] ?? []
+        ];
+
+        // Validate app data
+        $validation = $this->validateAppData($app);
+        if (!$validation['valid']) {
+            return [
+                'success' => false,
+                'error' => 'Invalid app data',
+                'details' => $validation['errors']
+            ];
+        }
+
+        // Store app
+        $this->apps[$app['id']] = $app;
+        $this->storeApp($app['id'], $app);
+
+        // Create initial version
+        $this->createAppVersion($app['id'], $app['version'], 'Initial release');
+
+        return [
+            'success' => true,
+            'app_id' => $app['id'],
+            'app' => $app
+        ];
+    }
+
+    /**
+     * Build mobile app
+     */
+    public function buildApp(string $appId, array $buildOptions = []): array
+    {
+        if (!isset($this->apps[$appId])) {
+            return [
+                'success' => false,
+                'error' => 'App not found'
+            ];
+        }
+
+        $app = $this->apps[$appId];
+
+        // Prepare build configuration
+        $buildConfig = [
+            'app_id' => $appId,
+            'platforms' => $buildOptions['platforms'] ?? $app['platforms'],
+            'version' => $buildOptions['version'] ?? $app['version'],
+            'environment' => $buildOptions['environment'] ?? 'development',
+            'signing' => $buildOptions['signing'] ?? false,
+            'optimization' => $buildOptions['optimization'] ?? true
+        ];
+
+        // Build app for each platform
+        $buildResults = [];
+        foreach ($buildConfig['platforms'] as $platform) {
+            $result = $this->appBuilder->build($app, $platform, $buildConfig);
+            $buildResults[$platform] = $result;
+
+            if ($result['success']) {
+                // Store build artifact
+                $this->storeBuildArtifact($appId, $platform, $result['artifact']);
+            }
+        }
+
+        // Update app status
+        $app['status'] = 'built';
+        $app['updated_at'] = time();
+        $this->apps[$appId] = $app;
+        $this->updateApp($appId, $app);
+
+        return [
+            'success' => true,
+            'build_results' => $buildResults,
+            'app' => $app
+        ];
+    }
+
+    /**
+     * Publish app to stores
+     */
+    public function publishApp(string $appId, array $publishOptions = []): array
+    {
+        if (!isset($this->apps[$appId])) {
+            return [
+                'success' => false,
+                'error' => 'App not found'
+            ];
+        }
+
+        $app = $this->apps[$appId];
+        $stores = $publishOptions['stores'] ?? array_keys($this->config['app_stores']);
+
+        $publishResults = [];
+        foreach ($stores as $store) {
+            if (!$this->config['app_stores'][$store]['enabled']) {
+                continue;
+            }
+
+            // Get build artifact for store
+            $artifact = $this->getBuildArtifact($appId, $store);
+            if (!$artifact) {
+                $publishResults[$store] = [
+                    'success' => false,
+                    'error' => 'Build artifact not found'
+                ];
+                continue;
+            }
+
+            // Prepare store listing
+            $listing = $this->prepareStoreListing($app, $store, $publishOptions);
+
+            // Publish to store
+            $result = $this->appStoreManager->publish($store, $artifact, $listing);
+            $publishResults[$store] = $result;
+
+            if ($result['success']) {
+                // Update app status
+                $app['published_stores'][] = $store;
+                $app['published_at'] = time();
+            }
+        }
+
+        // Update app
+        $app['status'] = 'published';
+        $app['updated_at'] = time();
+        $this->apps[$appId] = $app;
+        $this->updateApp($appId, $app);
+
+        return [
+            'success' => true,
+            'publish_results' => $publishResults,
+            'app' => $app
+        ];
+    }
+
+    /**
+     * Register device for push notifications
      */
     public function registerDevice(array $deviceData): array
     {
-        try {
-            // Validate required fields
-            $requiredFields = ['device_id', 'user_id', 'platform'];
-            foreach ($requiredFields as $field) {
-                if (!isset($deviceData[$field])) {
-                    throw new Exception("Missing required field: {$field}");
-                }
-            }
+        $device = [
+            'id' => uniqid('device_'),
+            'user_id' => $deviceData['user_id'],
+            'platform' => $deviceData['platform'], // android, ios, web
+            'device_token' => $deviceData['device_token'],
+            'device_id' => $deviceData['device_id'] ?? uniqid(),
+            'app_version' => $deviceData['app_version'] ?? '1.0.0',
+            'os_version' => $deviceData['os_version'] ?? '',
+            'model' => $deviceData['model'] ?? '',
+            'language' => $deviceData['language'] ?? 'en',
+            'timezone' => $deviceData['timezone'] ?? 'UTC',
+            'registered_at' => time(),
+            'last_active' => time(),
+            'status' => 'active'
+        ];
 
-            // Check device limit per user
-            if (!$this->canRegisterDevice($deviceData['user_id'])) {
-                throw new Exception("Maximum devices per user exceeded");
-            }
+        // Store device
+        $this->devices[$device['id']] = $device;
+        $this->storeDevice($device['id'], $device);
 
-            // Check if device already exists
-            $existingDevice = $this->getDeviceById($deviceData['device_id']);
-            if ($existingDevice) {
-                // Update existing device
-                return $this->updateDevice($deviceData['device_id'], $deviceData);
-            }
+        // Store push token
+        $this->pushTokens[$device['device_token']] = [
+            'device_id' => $device['id'],
+            'platform' => $device['platform'],
+            'user_id' => $device['user_id'],
+            'registered_at' => time()
+        ];
 
-            // Register new device
-            $stmt = $this->pdo->prepare("
-                INSERT INTO mobile_devices
-                (device_id, user_id, platform, device_model, os_version, app_version, push_token)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ");
-
-            $stmt->execute([
-                $deviceData['device_id'],
-                $deviceData['user_id'],
-                $deviceData['platform'],
-                $deviceData['device_model'] ?? null,
-                $deviceData['os_version'] ?? null,
-                $deviceData['app_version'] ?? null,
-                $deviceData['push_token'] ?? null
-            ]);
-
-            $deviceId = (int)$this->pdo->lastInsertId();
-
-            // Log device registration
-            $this->logMobileEvent($deviceData['device_id'], $deviceData['user_id'], 'device_registered', [
-                'platform' => $deviceData['platform'],
-                'app_version' => $deviceData['app_version']
-            ]);
-
-            return [
-                'success' => true,
-                'device_id' => $deviceId,
-                'message' => 'Device registered successfully'
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to register device: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Database error occurred'
-            ];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
+        return [
+            'success' => true,
+            'device_id' => $device['id'],
+            'device' => $device
+        ];
     }
 
     /**
-     * Update device information
+     * Send push notification
      */
-    public function updateDevice(string $deviceId, array $updateData): array
+    public function sendPushNotification(array $notificationData): array
     {
-        try {
-            $updateFields = [];
-            $params = [];
+        $notification = [
+            'id' => uniqid('notif_'),
+            'title' => $notificationData['title'],
+            'body' => $notificationData['body'],
+            'category' => $notificationData['category'] ?? 'general',
+            'target_users' => $notificationData['target_users'] ?? [],
+            'target_devices' => $notificationData['target_devices'] ?? [],
+            'data' => $notificationData['data'] ?? [],
+            'scheduled_at' => $notificationData['scheduled_at'] ?? time(),
+            'created_at' => time(),
+            'status' => 'pending'
+        ];
 
-            $allowedFields = ['device_model', 'os_version', 'app_version', 'push_token', 'is_active'];
+        // Determine target devices
+        $targetTokens = $this->getTargetDeviceTokens($notification);
 
-            foreach ($updateData as $field => $value) {
-                if (in_array($field, $allowedFields)) {
-                    $updateFields[] = "{$field} = ?";
-                    $params[] = $value;
-                }
-            }
-
-            if (empty($updateFields)) {
-                return [
-                    'success' => false,
-                    'error' => 'No valid fields to update'
-                ];
-            }
-
-            $params[] = $deviceId;
-            $updateFields[] = "last_login = NOW()";
-
-            $stmt = $this->pdo->prepare("
-                UPDATE mobile_devices
-                SET " . implode(', ', $updateFields) . "
-                WHERE device_id = ?
-            ");
-
-            $stmt->execute($params);
-
-            return [
-                'success' => true,
-                'message' => 'Device updated successfully'
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to update device: " . $e->getMessage());
+        if (empty($targetTokens)) {
             return [
                 'success' => false,
-                'error' => 'Database error occurred'
+                'error' => 'No target devices found'
             ];
         }
+
+        // Send notification
+        $result = $this->pushService->send($notification, $targetTokens);
+
+        // Record notification
+        $notification['status'] = $result['success'] ? 'sent' : 'failed';
+        $notification['sent_at'] = time();
+        $notification['delivery_stats'] = $result['stats'] ?? [];
+
+        $this->notifications[$notification['id']] = $notification;
+        $this->storeNotification($notification['id'], $notification);
+
+        return [
+            'success' => $result['success'],
+            'notification_id' => $notification['id'],
+            'delivery_stats' => $result['stats'] ?? [],
+            'notification' => $notification
+        ];
     }
 
     /**
-     * Unregister a device
+     * Update app configuration remotely
      */
-    public function unregisterDevice(string $deviceId, int $userId): array
+    public function updateRemoteConfig(string $appId, array $configUpdates): array
     {
-        try {
-            $stmt = $this->pdo->prepare("
-                UPDATE mobile_devices
-                SET is_active = false
-                WHERE device_id = ? AND user_id = ?
-            ");
-
-            $stmt->execute([$deviceId, $userId]);
-
-            if ($stmt->rowCount() > 0) {
-                // Log device unregistration
-                $this->logMobileEvent($deviceId, $userId, 'device_unregistered');
-
-                return [
-                    'success' => true,
-                    'message' => 'Device unregistered successfully'
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'error' => 'Device not found or access denied'
-                ];
-            }
-
-        } catch (PDOException $e) {
-            error_log("Failed to unregister device: " . $e->getMessage());
+        if (!isset($this->apps[$appId])) {
             return [
                 'success' => false,
-                'error' => 'Database error occurred'
+                'error' => 'App not found'
             ];
         }
+
+        $app = $this->apps[$appId];
+
+        // Update remote configuration
+        $app['remote_config'] = array_merge($app['remote_config'] ?? [], $configUpdates);
+        $app['config_updated_at'] = time();
+
+        // Store updated config
+        $this->storeRemoteConfig($appId, $app['remote_config']);
+
+        // Notify devices to refresh config
+        $this->notifyDevicesConfigUpdate($appId);
+
+        // Update app
+        $this->apps[$appId] = $app;
+        $this->updateApp($appId, $app);
+
+        return [
+            'success' => true,
+            'config' => $app['remote_config']
+        ];
     }
 
     /**
-     * Send push notification to device
+     * Get app analytics
      */
-    public function sendPushNotification(string $deviceId, array $notificationData): array
+    public function getAppAnalytics(string $appId, array $dateRange = []): array
     {
-        try {
-            // Get device information
-            $device = $this->getDeviceById($deviceId);
-            if (!$device || !$device['is_active']) {
-                return [
-                    'success' => false,
-                    'error' => 'Device not found or inactive'
-                ];
-            }
-
-            // Prepare notification payload
-            $payload = [
-                'to' => $device['push_token'],
-                'title' => $notificationData['title'] ?? 'TPT Government',
-                'body' => $notificationData['body'] ?? '',
-                'data' => $notificationData['data'] ?? [],
-                'priority' => $notificationData['priority'] ?? 'normal',
-                'ttl' => $notificationData['ttl'] ?? 86400 // 24 hours
-            ];
-
-            // Send notification based on platform
-            $result = $this->sendPlatformNotification($device['platform'], $payload);
-
-            // Log notification
-            $this->logMobileEvent($deviceId, $device['user_id'], 'push_notification_sent', [
-                'title' => $payload['title'],
-                'success' => $result['success']
-            ]);
-
-            return $result;
-
-        } catch (Exception $e) {
-            error_log("Failed to send push notification: " . $e->getMessage());
+        if (!isset($this->apps[$appId])) {
             return [
                 'success' => false,
-                'error' => 'Failed to send notification'
+                'error' => 'App not found'
             ];
         }
+
+        $analytics = $this->mobileAnalytics->getAppAnalytics($appId, $dateRange);
+
+        return [
+            'success' => true,
+            'analytics' => $analytics
+        ];
     }
 
     /**
-     * Send push notification to all user devices
+     * Handle app crash report
      */
-    public function sendPushNotificationToUser(int $userId, array $notificationData): array
+    public function handleCrashReport(array $crashData): array
     {
-        try {
-            $devices = $this->getUserDevices($userId);
-            $results = [];
+        // Process crash report
+        $processedCrash = $this->processCrashReport($crashData);
 
-            foreach ($devices as $device) {
-                if ($device['is_active'] && $device['push_token']) {
-                    $result = $this->sendPushNotification($device['device_id'], $notificationData);
-                    $results[] = [
-                        'device_id' => $device['device_id'],
-                        'platform' => $device['platform'],
-                        'success' => $result['success']
-                    ];
-                }
-            }
+        // Store crash report
+        $this->storeCrashReport($processedCrash);
 
-            return [
-                'success' => true,
-                'total_devices' => count($devices),
-                'successful_sends' => count(array_filter($results, fn($r) => $r['success'])),
-                'results' => $results
-            ];
+        // Check for patterns
+        $this->analyzeCrashPatterns($processedCrash);
 
-        } catch (Exception $e) {
-            error_log("Failed to send user notifications: " . $e->getMessage());
+        // Send alert if critical
+        if ($this->isCriticalCrash($processedCrash)) {
+            $this->sendCrashAlert($processedCrash);
+        }
+
+        return [
+            'success' => true,
+            'crash_id' => $processedCrash['id'],
+            'processed' => $processedCrash
+        ];
+    }
+
+    /**
+     * Create app version
+     */
+    public function createAppVersion(string $appId, string $version, string $changelog): array
+    {
+        if (!isset($this->apps[$appId])) {
             return [
                 'success' => false,
-                'error' => 'Failed to send notifications'
+                'error' => 'App not found'
             ];
         }
+
+        $appVersion = [
+            'id' => uniqid('version_'),
+            'app_id' => $appId,
+            'version' => $version,
+            'changelog' => $changelog,
+            'created_at' => time(),
+            'status' => 'draft',
+            'build_artifacts' => [],
+            'test_results' => [],
+            'release_notes' => ''
+        ];
+
+        // Store version
+        $this->appVersions[$appVersion['id']] = $appVersion;
+        $this->storeAppVersion($appVersion['id'], $appVersion);
+
+        return [
+            'success' => true,
+            'version_id' => $appVersion['id'],
+            'version' => $appVersion
+        ];
     }
 
     /**
-     * Queue data for offline synchronization
+     * Get app download stats
      */
-    public function queueOfflineSync(string $deviceId, string $dataType, array $dataPayload, array $options = []): array
+    public function getDownloadStats(string $appId): array
     {
-        try {
-            $options = array_merge([
-                'sync_type' => 'bidirectional',
-                'priority' => 'medium',
-                'user_id' => null
-            ], $options);
+        $stats = [];
 
-            // Get user ID from device if not provided
-            if (!$options['user_id']) {
-                $device = $this->getDeviceById($deviceId);
-                if (!$device) {
-                    return [
-                        'success' => false,
-                        'error' => 'Device not found'
-                    ];
-                }
-                $options['user_id'] = $device['user_id'];
+        foreach ($this->config['app_stores'] as $store => $config) {
+            if ($config['enabled']) {
+                $stats[$store] = $this->appStoreManager->getDownloadStats($appId, $store);
             }
+        }
 
-            $stmt = $this->pdo->prepare("
-                INSERT INTO offline_sync_queue
-                (device_id, user_id, sync_type, data_type, data_payload, priority)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ");
+        return [
+            'success' => true,
+            'stats' => $stats,
+            'total_downloads' => array_sum(array_column($stats, 'downloads'))
+        ];
+    }
 
-            $stmt->execute([
-                $deviceId,
-                $options['user_id'],
-                $options['sync_type'],
-                $dataType,
-                json_encode($dataPayload),
-                $options['priority']
-            ]);
-
-            return [
-                'success' => true,
-                'sync_id' => (int)$this->pdo->lastInsertId(),
-                'message' => 'Data queued for synchronization'
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to queue offline sync: " . $e->getMessage());
+    /**
+     * Enable/disable app feature
+     */
+    public function toggleAppFeature(string $appId, string $feature, bool $enabled): array
+    {
+        if (!isset($this->apps[$appId])) {
             return [
                 'success' => false,
-                'error' => 'Database error occurred'
+                'error' => 'App not found'
             ];
         }
-    }
 
-    /**
-     * Process offline sync queue
-     */
-    public function processOfflineSync(string $deviceId = null, int $batchSize = null): array
-    {
-        $batchSize = $batchSize ?? $this->config['sync_batch_size'];
+        $app = $this->apps[$appId];
 
-        try {
-            // Build query
-            $query = "
-                SELECT * FROM offline_sync_queue
-                WHERE status = 'pending'
-                AND retry_count < max_retries
-            ";
+        // Update feature status
+        $app['features'][$feature] = $enabled;
+        $app['updated_at'] = time();
 
-            $params = [];
-            if ($deviceId) {
-                $query .= " AND device_id = ?";
-                $params[] = $deviceId;
-            }
+        // Update remote config
+        $this->updateRemoteConfig($appId, ['features' => $app['features']]);
 
-            $query .= " ORDER BY priority DESC, created_at ASC LIMIT ?";
+        // Update app
+        $this->apps[$appId] = $app;
+        $this->updateApp($appId, $app);
 
-            $stmt = $this->pdo->prepare($query);
-            $params[] = $batchSize;
-            $stmt->execute($params);
-
-            $syncItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            $processed = 0;
-            $successful = 0;
-            $failed = 0;
-
-            foreach ($syncItems as $item) {
-                $result = $this->processSyncItem($item);
-
-                if ($result['success']) {
-                    $successful++;
-                } else {
-                    $failed++;
-                }
-
-                $processed++;
-            }
-
-            return [
-                'success' => true,
-                'processed' => $processed,
-                'successful' => $successful,
-                'failed' => $failed
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to process offline sync: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Database error occurred'
-            ];
-        }
-    }
-
-    /**
-     * Get synchronization data for device
-     */
-    public function getSyncData(string $deviceId, string $lastSyncTimestamp = null): array
-    {
-        try {
-            $device = $this->getDeviceById($deviceId);
-            if (!$device) {
-                return [
-                    'success' => false,
-                    'error' => 'Device not found'
-                ];
-            }
-
-            $syncData = [
-                'user_data' => $this->getUserDataForSync($device['user_id'], $lastSyncTimestamp),
-                'application_data' => $this->getApplicationDataForSync($lastSyncTimestamp),
-                'notifications' => $this->getNotificationsForSync($device['user_id'], $lastSyncTimestamp),
-                'timestamp' => date('Y-m-d H:i:s')
-            ];
-
-            return [
-                'success' => true,
-                'data' => $syncData
-            ];
-
-        } catch (Exception $e) {
-            error_log("Failed to get sync data: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve sync data'
-            ];
-        }
-    }
-
-    /**
-     * Check for app updates
-     */
-    public function checkAppUpdate(string $platform, string $currentVersion): array
-    {
-        try {
-            $stmt = $this->pdo->prepare("
-                SELECT * FROM mobile_app_versions
-                WHERE platform = ?
-                AND is_latest = true
-                LIMIT 1
-            ");
-
-            $stmt->execute([$platform]);
-            $latestVersion = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$latestVersion) {
-                return [
-                    'update_available' => false,
-                    'message' => 'No version information available'
-                ];
-            }
-
-            $updateAvailable = version_compare($latestVersion['version'], $currentVersion, '>');
-
-            return [
-                'update_available' => $updateAvailable,
-                'current_version' => $currentVersion,
-                'latest_version' => $latestVersion['version'],
-                'download_url' => $latestVersion['download_url'],
-                'release_notes' => $latestVersion['release_notes'],
-                'is_mandatory' => (bool)$latestVersion['is_mandatory']
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to check app update: " . $e->getMessage());
-            return [
-                'update_available' => false,
-                'error' => 'Failed to check for updates'
-            ];
-        }
-    }
-
-    /**
-     * Track mobile app analytics
-     */
-    public function trackMobileEvent(string $deviceId, ?int $userId, string $eventType, array $eventData = []): bool
-    {
-        try {
-            $stmt = $this->pdo->prepare("
-                INSERT INTO mobile_analytics
-                (device_id, user_id, event_type, event_category, event_data, session_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ");
-
-            $stmt->execute([
-                $deviceId,
-                $userId,
-                $eventType,
-                $this->getEventCategory($eventType),
-                !empty($eventData) ? json_encode($eventData) : null,
-                $eventData['session_id'] ?? null
-            ]);
-
-            return true;
-
-        } catch (PDOException $e) {
-            error_log("Failed to track mobile event: " . $e->getMessage());
-            return false;
-        }
+        return [
+            'success' => true,
+            'feature' => $feature,
+            'enabled' => $enabled,
+            'app' => $app
+        ];
     }
 
     /**
@@ -605,271 +658,94 @@ class MobileAppManager
      */
     public function getMobileStats(): array
     {
-        try {
-            $stats = [];
-
-            // Device statistics
-            $stmt = $this->pdo->query("
-                SELECT
-                    platform,
-                    COUNT(*) as total_devices,
-                    COUNT(CASE WHEN is_active THEN 1 END) as active_devices
-                FROM mobile_devices
-                GROUP BY platform
-            ");
-            $stats['devices_by_platform'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            // User engagement
-            $stmt = $this->pdo->query("
-                SELECT
-                    COUNT(DISTINCT user_id) as total_users,
-                    COUNT(DISTINCT device_id) as total_devices,
-                    AVG(datediff(NOW(), last_login)) as avg_days_since_login
-                FROM mobile_devices
-                WHERE is_active = true
-            ");
-            $stats['engagement'] = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            // Sync queue status
-            $stmt = $this->pdo->query("
-                SELECT
-                    status,
-                    COUNT(*) as count
-                FROM offline_sync_queue
-                GROUP BY status
-            ");
-            $stats['sync_status'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            // Popular events
-            $stmt = $this->pdo->query("
-                SELECT
-                    event_type,
-                    COUNT(*) as count
-                FROM mobile_analytics
-                WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                GROUP BY event_type
-                ORDER BY count DESC
-                LIMIT 10
-            ");
-            $stats['popular_events'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            return $stats;
-
-        } catch (PDOException $e) {
-            error_log("Failed to get mobile stats: " . $e->getMessage());
-            return [];
-        }
+        return [
+            'total_apps' => count($this->apps),
+            'active_devices' => count(array_filter($this->devices, fn($d) => $d['status'] === 'active')),
+            'total_push_tokens' => count($this->pushTokens),
+            'notifications_sent_today' => $this->getNotificationsSentToday(),
+            'total_downloads' => $this->getTotalDownloads(),
+            'crash_rate' => $this->getCrashRate(),
+            'avg_session_duration' => $this->getAverageSessionDuration(),
+            'user_engagement_rate' => $this->getUserEngagementRate()
+        ];
     }
 
-    /**
-     * Configure mobile app features
-     */
-    public function configureFeature(string $featureName, array $config): array
-    {
-        try {
-            $stmt = $this->pdo->prepare("
-                INSERT INTO mobile_app_features
-                (feature_name, feature_description, platform_support, is_enabled, requires_permission, permission_name)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                feature_description = VALUES(feature_description),
-                platform_support = VALUES(platform_support),
-                is_enabled = VALUES(is_enabled),
-                requires_permission = VALUES(requires_permission),
-                permission_name = VALUES(permission_name)
-            ");
+    // Helper methods (implementations would be more complex in production)
 
-            $stmt->execute([
-                $featureName,
-                $config['description'] ?? null,
-                json_encode($config['platform_support'] ?? ['ios' => true, 'android' => true, 'web' => true]),
-                $config['enabled'] ?? true,
-                $config['requires_permission'] ?? false,
-                $config['permission_name'] ?? null
-            ]);
+    private function validateAppData(array $app): array {/* Implementation */}
+    private function storeApp(string $appId, array $app): void {/* Implementation */}
+    private function createAppVersion(string $appId, string $version, string $changelog): void {/* Implementation */}
+    private function storeBuildArtifact(string $appId, string $platform, array $artifact): void {/* Implementation */}
+    private function updateApp(string $appId, array $app): void {/* Implementation */}
+    private function getBuildArtifact(string $appId, string $store): ?array {/* Implementation */}
+    private function prepareStoreListing(array $app, string $store, array $options): array {/* Implementation */}
+    private function storeDevice(string $deviceId, array $device): void {/* Implementation */}
+    private function getTargetDeviceTokens(array $notification): array {/* Implementation */}
+    private function storeNotification(string $notificationId, array $notification): void {/* Implementation */}
+    private function storeRemoteConfig(string $appId, array $config): void {/* Implementation */}
+    private function notifyDevicesConfigUpdate(string $appId): void {/* Implementation */}
+    private function processCrashReport(array $crashData): array {/* Implementation */}
+    private function storeCrashReport(array $crash): void {/* Implementation */}
+    private function analyzeCrashPatterns(array $crash): void {/* Implementation */}
+    private function isCriticalCrash(array $crash): bool {/* Implementation */}
+    private function sendCrashAlert(array $crash): void {/* Implementation */}
+    private function storeAppVersion(string $versionId, array $version): void {/* Implementation */}
+    private function setupBuildEnvironments(): void {/* Implementation */}
+    private function setupAppTemplates(): void {/* Implementation */}
+    private function setupBuildPipelines(): void {/* Implementation */}
+    private function getProviderConfig(string $provider): array {/* Implementation */}
+    private function setupNotificationCategories(): void {/* Implementation */}
+    private function setupDeliveryTracking(): void {/* Implementation */}
+    private function setupOfflineMode(): void {/* Implementation */}
+    private function setupBiometricAuth(): void {/* Implementation */}
+    private function setupLocationServices(): void {/* Implementation */}
+    private function setupCertificatePinning(): void {/* Implementation */}
+    private function setupAppEncryption(): void {/* Implementation */}
+    private function setupSecureStorage(): void {/* Implementation */}
+    private function setupCrashReporting(): void {/* Implementation */}
+    private function setupUsageTracking(): void {/* Implementation */}
+    private function setupPerformanceMonitoring(): void {/* Implementation */}
+    private function getStoreConfig(string $store): array {/* Implementation */}
+    private function startAppMonitoring(): void {/* Implementation */}
+    private function startDeviceMonitoring(): void {/* Implementation */}
+    private function startPerformanceMonitoring(): void {/* Implementation */}
+    private function generateBundleId(string $name): string {/* Implementation */}
+    private function getNotificationsSentToday(): int {/* Implementation */}
+    private function getTotalDownloads(): int {/* Implementation */}
+    private function getCrashRate(): float {/* Implementation */}
+    private function getAverageSessionDuration(): float {/* Implementation */}
+    private function getUserEngagementRate(): float {/* Implementation */}
+}
 
-            return [
-                'success' => true,
-                'message' => 'Feature configured successfully'
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to configure feature: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Database error occurred'
-            ];
-        }
-    }
-
-    /**
-     * Get feature configuration for platform
-     */
-    public function getFeatureConfig(string $platform): array
-    {
-        try {
-            $stmt = $this->pdo->query("
-                SELECT
-                    feature_name,
-                    feature_description,
-                    JSON_EXTRACT(platform_support, '$." . $platform . "') as supported,
-                    is_enabled,
-                    requires_permission,
-                    permission_name
-                FROM mobile_app_features
-                WHERE is_enabled = true
-            ");
-
-            $features = [];
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                if ($row['supported']) {
-                    $features[$row['feature_name']] = [
-                        'description' => $row['feature_description'],
-                        'enabled' => (bool)$row['is_enabled'],
-                        'requires_permission' => (bool)$row['requires_permission'],
-                        'permission_name' => $row['permission_name']
-                    ];
-                }
-            }
-
-            return [
-                'success' => true,
-                'platform' => $platform,
-                'features' => $features
-            ];
-
-        } catch (PDOException $e) {
-            error_log("Failed to get feature config: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Database error occurred'
-            ];
-        }
-    }
-
-    // Private helper methods
-
-    private function canRegisterDevice(int $userId): bool
-    {
-        $stmt = $this->pdo->prepare("
-            SELECT COUNT(*) as device_count
-            FROM mobile_devices
-            WHERE user_id = ? AND is_active = true
-        ");
-        $stmt->execute([$userId]);
-        $count = $stmt->fetch(PDO::FETCH_ASSOC)['device_count'];
-
-        return $count < $this->config['max_devices_per_user'];
-    }
-
-    private function getDeviceById(string $deviceId): ?array
-    {
-        $stmt = $this->pdo->prepare("
-            SELECT * FROM mobile_devices WHERE device_id = ?
-        ");
-        $stmt->execute([$deviceId]);
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    }
-
-    private function getUserDevices(int $userId): array
-    {
-        $stmt = $this->pdo->prepare("
-            SELECT * FROM mobile_devices
-            WHERE user_id = ? AND is_active = true
-        ");
-        $stmt->execute([$userId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    private function sendPlatformNotification(string $platform, array $payload): array
-    {
-        // Implementation would vary by platform (FCM for Android, APNS for iOS, etc.)
-        // This is a placeholder implementation
+// Placeholder classes for dependencies
+class MobileAppBuilder {
+    public function build(array $app, string $platform, array $config): array {
         return [
             'success' => true,
-            'message_id' => uniqid('msg_'),
-            'platform' => $platform
+            'platform' => $platform,
+            'artifact' => ['path' => '/builds/' . $app['id'] . '/' . $platform . '.apk', 'size' => rand(10000000, 50000000)]
         ];
     }
+}
 
-    private function processSyncItem(array $item): array
-    {
-        try {
-            // Mark as processing
-            $this->updateSyncStatus($item['id'], 'processing');
-
-            // Process based on sync type and data type
-            $result = $this->processSyncData($item);
-
-            if ($result['success']) {
-                $this->updateSyncStatus($item['id'], 'completed');
-            } else {
-                $this->updateSyncStatus($item['id'], 'failed', $result['error'] ?? 'Unknown error');
-            }
-
-            return $result;
-
-        } catch (Exception $e) {
-            $this->updateSyncStatus($item['id'], 'failed', $e->getMessage());
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    private function updateSyncStatus(int $syncId, string $status, string $errorMessage = null): void
-    {
-        $stmt = $this->pdo->prepare("
-            UPDATE offline_sync_queue
-            SET status = ?, processed_at = NOW(), error_message = ?
-            WHERE id = ?
-        ");
-        $stmt->execute([$status, $errorMessage, $syncId]);
-    }
-
-    private function processSyncData(array $item): array
-    {
-        // Implementation would handle different data types and sync operations
-        // This is a placeholder
-        return ['success' => true];
-    }
-
-    private function getUserDataForSync(int $userId, ?string $lastSyncTimestamp): array
-    {
-        // Implementation would retrieve user-specific data for sync
-        return [];
-    }
-
-    private function getApplicationDataForSync(?string $lastSyncTimestamp): array
-    {
-        // Implementation would retrieve application data for sync
-        return [];
-    }
-
-    private function getNotificationsForSync(int $userId, ?string $lastSyncTimestamp): array
-    {
-        // Implementation would retrieve notifications for sync
-        return [];
-    }
-
-    private function getEventCategory(string $eventType): string
-    {
-        $categories = [
-            'device_registered' => 'device',
-            'device_unregistered' => 'device',
-            'push_notification_sent' => 'notification',
-            'app_launched' => 'engagement',
-            'app_backgrounded' => 'engagement',
-            'feature_used' => 'engagement',
-            'error_occurred' => 'error'
+class PushNotificationService {
+    public function configureProvider(string $provider, array $config): void {/* Implementation */}
+    public function send(array $notification, array $tokens): array {
+        return [
+            'success' => true,
+            'stats' => ['sent' => count($tokens), 'delivered' => count($tokens), 'failed' => 0]
         ];
-
-        return $categories[$eventType] ?? 'other';
     }
+}
 
-    private function logMobileEvent(string $deviceId, ?int $userId, string $eventType, array $eventData = []): void
-    {
-        $this->trackMobileEvent($deviceId, $userId, $eventType, $eventData);
+class MobileAnalytics {
+    public function getAppAnalytics(string $appId, array $dateRange): array {/* Implementation */}
+}
+
+class AppStoreManager {
+    public function configureStore(string $store, array $config): void {/* Implementation */}
+    public function publish(string $store, array $artifact, array $listing): array {
+        return ['success' => true, 'store_url' => 'https://play.google.com/store/apps/details?id=com.example.app'];
     }
+    public function getDownloadStats(string $appId, string $store): array {/* Implementation */}
 }

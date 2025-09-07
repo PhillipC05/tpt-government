@@ -876,38 +876,561 @@ class BusinessLicensesModule extends ServiceModule
     }
 
     /**
-     * Placeholder methods (would be implemented with actual database operations)
+     * Save application to database
      */
-    private function saveApplication(array $application): void {}
-    private function getApplication(string $applicationId): ?array { return null; }
-    private function updateApplicationStatus(string $applicationId, string $status): void {}
-    private function updateApplication(string $applicationId, array $data): void {}
-    private function startApplicationWorkflow(string $applicationId): void {}
-    private function advanceWorkflow(string $applicationId, string $step): void {}
-    private function sendNotification(string $type, int $userId, array $data): void {}
-    private function validateApplicationRequirements(array $application): array { return ['valid' => true, 'errors' => []]; }
-    private function createComplianceRequirements(string $applicationId, array $licenseType): void {}
-    private function getLicense(string $licenseId): ?array { return null; }
-    private function canRenewLicense(array $license): bool { return true; }
-    private function calculateRenewalFee(array $licenseType, array $renewalData): float { return $licenseType['fee_amount']; }
-    private function createRenewalRecord(string $licenseId, float $fee, array $data): string { return 'RN' . uniqid(); }
-    private function getRenewal(string $renewalId): ?array { return null; }
-    private function updateRenewalStatus(string $renewalId, string $status, string $transactionId): void {}
-    private function extendLicenseExpiry(string $licenseId): void {}
-    private function getComplianceRecords(string $licenseId): array { return []; }
+    private function saveApplication(array $application): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO business_licenses (
+                application_id, business_name, business_type, license_type,
+                owner_id, status, application_date, fee_amount, documents,
+                requirements, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $application['application_id'],
+                $application['business_name'],
+                $application['business_type'],
+                $application['license_type'],
+                $application['owner_id'],
+                $application['status'],
+                $application['application_date'],
+                $application['fee_amount'],
+                json_encode($application['documents']),
+                json_encode($application['requirements']),
+                $application['notes']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving application: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get application by ID
+     */
+    private function getApplication(string $applicationId): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM business_licenses WHERE application_id = ?";
+            $result = $db->fetch($sql, [$applicationId]);
+
+            if ($result) {
+                $result['documents'] = json_decode($result['documents'], true);
+                $result['requirements'] = json_decode($result['requirements'], true);
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            error_log("Error getting application: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update application status
+     */
+    private function updateApplicationStatus(string $applicationId, string $status): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "UPDATE business_licenses SET status = ? WHERE application_id = ?";
+            return $db->execute($sql, [$status, $applicationId]);
+        } catch (\Exception $e) {
+            error_log("Error updating application status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Update application
+     */
+    private function updateApplication(string $applicationId, array $data): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $setParts = [];
+            $params = [];
+
+            foreach ($data as $field => $value) {
+                if (is_array($value)) {
+                    $setParts[] = "{$field} = ?";
+                    $params[] = json_encode($value);
+                } else {
+                    $setParts[] = "{$field} = ?";
+                    $params[] = $value;
+                }
+            }
+
+            $params[] = $applicationId;
+
+            $sql = "UPDATE business_licenses SET " . implode(', ', $setParts) . " WHERE application_id = ?";
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error updating application: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Start application workflow
+     */
+    private function startApplicationWorkflow(string $applicationId): bool
+    {
+        try {
+            $workflowEngine = new WorkflowEngine();
+            return $workflowEngine->startWorkflow('license_application', $applicationId);
+        } catch (\Exception $e) {
+            error_log("Error starting application workflow: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Advance workflow
+     */
+    private function advanceWorkflow(string $applicationId, string $step): bool
+    {
+        try {
+            $workflowEngine = new WorkflowEngine();
+            return $workflowEngine->advanceWorkflow($applicationId, $step);
+        } catch (\Exception $e) {
+            error_log("Error advancing workflow: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send notification
+     */
+    private function sendNotification(string $type, int $userId, array $data): bool
+    {
+        try {
+            $notificationManager = new NotificationManager();
+            return $notificationManager->sendNotification($type, $userId, $data);
+        } catch (\Exception $e) {
+            error_log("Error sending notification: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Validate application requirements
+     */
+    private function validateApplicationRequirements(array $application): array
+    {
+        $errors = [];
+        $requirements = $application['requirements'] ?? [];
+
+        // Check if all required documents are uploaded
+        foreach ($requirements as $requirement) {
+            if (!isset($application['documents'][$requirement]) || empty($application['documents'][$requirement])) {
+                $errors[] = "Required document missing: {$requirement}";
+            }
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors
+        ];
+    }
+
+    /**
+     * Create compliance requirements
+     */
+    private function createComplianceRequirements(string $applicationId, array $licenseType): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            foreach ($this->complianceRequirements as $requirementType => $requirement) {
+                $sql = "INSERT INTO license_compliance (
+                    license_id, requirement_type, description, due_date
+                ) VALUES (?, ?, ?, ?)";
+
+                $dueDate = $this->calculateComplianceDueDate($requirement);
+
+                $params = [
+                    $applicationId,
+                    $requirementType,
+                    $requirement['description'],
+                    $dueDate
+                ];
+
+                if (!$db->execute($sql, $params)) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            error_log("Error creating compliance requirements: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Calculate compliance due date
+     */
+    private function calculateComplianceDueDate(array $requirement): string
+    {
+        $baseDate = date('Y-m-d');
+
+        if ($requirement['frequency'] === 'annual') {
+            return date('Y-m-d', strtotime($baseDate . ' +' . $requirement['due_month'] . ' months'));
+        } elseif ($requirement['frequency'] === 'biennial') {
+            return date('Y-m-d', strtotime($baseDate . ' +2 years +' . $requirement['due_month'] . ' months'));
+        }
+
+        return date('Y-m-d', strtotime($baseDate . ' +1 year'));
+    }
+
+    /**
+     * Get license by ID
+     */
+    private function getLicense(string $licenseId): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM business_licenses WHERE application_id = ?";
+            return $db->fetch($sql, [$licenseId]);
+        } catch (\Exception $e) {
+            error_log("Error getting license: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if license can be renewed
+     */
+    private function canRenewLicense(array $license): bool
+    {
+        $currentDate = date('Y-m-d');
+        $expiryDate = $license['expiry_date'];
+
+        // Allow renewal up to 90 days after expiry
+        $renewalDeadline = date('Y-m-d', strtotime($expiryDate . ' +90 days'));
+
+        return $currentDate <= $renewalDeadline && $license['status'] !== 'revoked';
+    }
+
+    /**
+     * Calculate renewal fee
+     */
+    private function calculateRenewalFee(array $licenseType, array $renewalData): float
+    {
+        $baseFee = $licenseType['fee_amount'];
+
+        // Apply late fee if renewal is after expiry
+        if (isset($renewalData['is_late']) && $renewalData['is_late']) {
+            $baseFee *= 1.25; // 25% late fee
+        }
+
+        return $baseFee;
+    }
+
+    /**
+     * Create renewal record
+     */
+    private function createRenewalRecord(string $licenseId, float $fee, array $data): string
+    {
+        try {
+            $db = Database::getInstance();
+
+            $renewalId = 'RN' . date('Y') . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+
+            $sql = "INSERT INTO license_renewals (
+                license_id, renewal_date, fee_amount, status
+            ) VALUES (?, ?, ?, ?)";
+
+            $params = [
+                $licenseId,
+                date('Y-m-d H:i:s'),
+                $fee,
+                'pending'
+            ];
+
+            if ($db->execute($sql, $params)) {
+                return $renewalId;
+            }
+
+            return '';
+        } catch (\Exception $e) {
+            error_log("Error creating renewal record: " . $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
+     * Get renewal by ID
+     */
+    private function getRenewal(string $renewalId): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM license_renewals WHERE id = ?";
+            return $db->fetch($sql, [$renewalId]);
+        } catch (\Exception $e) {
+            error_log("Error getting renewal: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update renewal status
+     */
+    private function updateRenewalStatus(string $renewalId, string $status, string $transactionId): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "UPDATE license_renewals SET status = ?, payment_id = ? WHERE id = ?";
+            return $db->execute($sql, [$status, $transactionId, $renewalId]);
+        } catch (\Exception $e) {
+            error_log("Error updating renewal status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Extend license expiry
+     */
+    private function extendLicenseExpiry(string $licenseId): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            // Get current license
+            $license = $this->getLicense($licenseId);
+            if (!$license) {
+                return false;
+            }
+
+            // Get license type for validity period
+            $licenseType = $this->licenseTypes[$license['license_type']];
+            $newExpiryDate = date('Y-m-d H:i:s', strtotime($license['expiry_date'] . " +{$licenseType['validity_period']} days"));
+
+            $sql = "UPDATE business_licenses SET expiry_date = ?, renewal_date = ? WHERE application_id = ?";
+            return $db->execute($sql, [$newExpiryDate, date('Y-m-d H:i:s'), $licenseId]);
+        } catch (\Exception $e) {
+            error_log("Error extending license expiry: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get compliance records for license
+     */
+    private function getComplianceRecords(string $licenseId): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM license_compliance WHERE license_id = ?";
+            return $db->fetchAll($sql, [$licenseId]);
+        } catch (\Exception $e) {
+            error_log("Error getting compliance records: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get licenses (API handler)
+     */
+    public function getLicenses(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM business_licenses WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['license_type'])) {
+                $sql .= " AND license_type = ?";
+                $params[] = $filters['license_type'];
+            }
+
+            if (isset($filters['owner_id'])) {
+                $sql .= " AND owner_id = ?";
+                $params[] = $filters['owner_id'];
+            }
+
+            $sql .= " ORDER BY created_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['documents'] = json_decode($result['documents'], true);
+                $result['requirements'] = json_decode($result['requirements'], true);
+            }
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting licenses: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve licenses'
+            ];
+        }
+    }
+
+    /**
+     * Get license (API handler)
+     */
+    public function getLicense(string $applicationId): array
+    {
+        $license = $this->getApplication($applicationId);
+
+        if (!$license) {
+            return [
+                'success' => false,
+                'error' => 'License not found'
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data' => $license
+        ];
+    }
+
+    /**
+     * Create license (API handler)
+     */
+    public function createLicense(array $data): array
+    {
+        return $this->createLicenseApplication($data);
+    }
+
+    /**
+     * Update license (API handler)
+     */
+    public function updateLicense(string $applicationId, array $data): array
+    {
+        try {
+            $license = $this->getApplication($applicationId);
+
+            if (!$license) {
+                return [
+                    'success' => false,
+                    'error' => 'License not found'
+                ];
+            }
+
+            if ($license['status'] !== 'draft') {
+                return [
+                    'success' => false,
+                    'error' => 'License cannot be modified'
+                ];
+            }
+
+            $this->updateApplication($applicationId, $data);
+
+            return [
+                'success' => true,
+                'message' => 'License updated successfully'
+            ];
+        } catch (\Exception $e) {
+            error_log("Error updating license: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to update license'
+            ];
+        }
+    }
+
+    /**
+     * Renew license (API handler)
+     */
+    public function renewLicense(string $licenseId, array $renewalData): array
+    {
+        return $this->renewLicense($licenseId, $renewalData);
+    }
+
+    /**
+     * Approve license (API handler)
+     */
+    public function approveLicense(string $applicationId, array $approvalData): array
+    {
+        return $this->approveLicenseApplication($applicationId, $approvalData);
+    }
+
+    /**
+     * Reject license (API handler)
+     */
+    public function rejectLicense(string $applicationId, string $reason): array
+    {
+        return $this->rejectLicenseApplication($applicationId, $reason);
+    }
 
     /**
      * Get module statistics
      */
     public function getModuleStatistics(): array
     {
-        return [
-            'total_applications' => 0, // Would query database
-            'approved_licenses' => 0,
-            'pending_applications' => 0,
-            'expired_licenses' => 0,
-            'total_revenue' => 0.00,
-            'compliance_rate' => 0.0
-        ];
+        try {
+            $db = Database::getInstance();
+
+            // Get license statistics
+            $licenseStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_applications,
+                    COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_licenses,
+                    COUNT(CASE WHEN status = 'submitted' THEN 1 END) as pending_applications,
+                    COUNT(CASE WHEN status = 'expired' THEN 1 END) as expired_licenses,
+                    SUM(fee_amount) as total_revenue
+                FROM business_licenses
+            ");
+
+            // Get compliance statistics
+            $complianceStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_requirements,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_requirements
+                FROM license_compliance
+            ");
+
+            $complianceRate = $complianceStats['total_requirements'] > 0 ?
+                round(($complianceStats['completed_requirements'] / $complianceStats['total_requirements']) * 100, 2) : 0;
+
+            return [
+                'total_applications' => $licenseStats['total_applications'] ?? 0,
+                'approved_licenses' => $licenseStats['approved_licenses'] ?? 0,
+                'pending_applications' => $licenseStats['pending_applications'] ?? 0,
+                'expired_licenses' => $licenseStats['expired_licenses'] ?? 0,
+                'total_revenue' => $licenseStats['total_revenue'] ?? 0.00,
+                'compliance_rate' => $complianceRate
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting module statistics: " . $e->getMessage());
+            return [
+                'total_applications' => 0,
+                'approved_licenses' => 0,
+                'pending_applications' => 0,
+                'expired_licenses' => 0,
+                'total_revenue' => 0.00,
+                'compliance_rate' => 0.0
+            ];
+        }
     }
 }

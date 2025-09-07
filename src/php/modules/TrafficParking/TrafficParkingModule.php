@@ -1044,37 +1044,617 @@ class TrafficParkingModule extends ServiceModule
     }
 
     /**
-     * Placeholder methods (would be implemented with actual database operations)
+     * Save traffic ticket to database
      */
-    private function saveTrafficTicket(array $ticket): void {}
-    private function saveParkingViolation(array $violation): void {}
-    private function getTicket(string $ticketNumber, string $type): ?array { return null; }
-    private function updateTicketStatus(string $ticketNumber, string $type, string $status): void {}
-    private function updateTicketPaymentDate(string $ticketNumber, string $type, string $date): void {}
-    private function updateDriverPoints(string $licensePlate, int $points): void {}
-    private function startTicketWorkflow(string $ticketNumber, string $type): void {}
-    private function advanceWorkflow(string $ticketNumber, string $step): void {}
-    private function sendNotification(string $type, ?int $userId, array $data): void {}
-    private function saveTicketAppeal(array $appeal): void {}
-    private function getTicketAppeal(int $appealId): ?array { return null; }
-    private function updateAppealDecision(int $appealId, string $decision, array $data): void {}
-    private function getDriverPointsRecord(string $licenseNumber): ?array { return null; }
-    private function getPendingCourtTickets(): array { return []; }
-    private function syncTicketWithCourt(array $ticket): array { return []; }
-    private function updateCourtIntegration(string $ticketNumber, array $courtData): void {}
+    private function saveTrafficTicket(array $ticket): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO traffic_tickets (
+                ticket_number, license_plate, vehicle_make, vehicle_model, vehicle_year,
+                violation_type, violation_code, violation_description, location, date_time,
+                officer_id, officer_name, fine_amount, points_assessment, status,
+                due_date, appeal_deadline, evidence_photos, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $ticket['ticket_number'],
+                $ticket['license_plate'],
+                $ticket['vehicle_make'],
+                $ticket['vehicle_model'],
+                $ticket['vehicle_year'],
+                $ticket['violation_type'],
+                $ticket['violation_code'],
+                $ticket['violation_description'],
+                $ticket['location'],
+                $ticket['date_time'],
+                $ticket['officer_id'],
+                $ticket['officer_name'],
+                $ticket['fine_amount'],
+                $ticket['points_assessment'],
+                $ticket['status'],
+                $ticket['due_date'],
+                $ticket['appeal_deadline'],
+                json_encode($ticket['evidence_photos']),
+                $ticket['notes']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving traffic ticket: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save parking violation to database
+     */
+    private function saveParkingViolation(array $violation): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO parking_violations (
+                violation_number, license_plate, violation_type, violation_code,
+                location, zone_type, date_time, officer_id, fine_amount, status,
+                due_date, appeal_deadline, evidence_photos, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $violation['violation_number'],
+                $violation['license_plate'],
+                $violation['violation_type'],
+                $violation['violation_code'],
+                $violation['location'],
+                $violation['zone_type'],
+                $violation['date_time'],
+                $violation['officer_id'],
+                $violation['fine_amount'],
+                $violation['status'],
+                $violation['due_date'],
+                $violation['appeal_deadline'],
+                json_encode($violation['evidence_photos']),
+                $violation['notes']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving parking violation: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get ticket by number and type
+     */
+    private function getTicket(string $ticketNumber, string $type): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            if ($type === 'traffic') {
+                $sql = "SELECT * FROM traffic_tickets WHERE ticket_number = ?";
+            } else {
+                $sql = "SELECT * FROM parking_violations WHERE violation_number = ?";
+            }
+
+            $result = $db->fetch($sql, [$ticketNumber]);
+
+            if ($result) {
+                if ($type === 'traffic') {
+                    $result['evidence_photos'] = json_decode($result['evidence_photos'], true);
+                } else {
+                    $result['evidence_photos'] = json_decode($result['evidence_photos'], true);
+                }
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            error_log("Error getting ticket: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update ticket status
+     */
+    private function updateTicketStatus(string $ticketNumber, string $type, string $status): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            if ($type === 'traffic') {
+                $sql = "UPDATE traffic_tickets SET status = ? WHERE ticket_number = ?";
+            } else {
+                $sql = "UPDATE parking_violations SET status = ? WHERE violation_number = ?";
+            }
+
+            return $db->execute($sql, [$status, $ticketNumber]);
+        } catch (\Exception $e) {
+            error_log("Error updating ticket status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Update ticket payment date
+     */
+    private function updateTicketPaymentDate(string $ticketNumber, string $type, string $date): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            if ($type === 'traffic') {
+                $sql = "UPDATE traffic_tickets SET payment_date = ? WHERE ticket_number = ?";
+            } else {
+                $sql = "UPDATE parking_violations SET payment_date = ? WHERE violation_number = ?";
+            }
+
+            return $db->execute($sql, [$date, $ticketNumber]);
+        } catch (\Exception $e) {
+            error_log("Error updating ticket payment date: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Update driver license points
+     */
+    private function updateDriverPoints(string $licensePlate, int $points): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            // First, try to find existing record
+            $existingRecord = $db->fetch("SELECT * FROM driver_license_points WHERE license_number = ?", [$licensePlate]);
+
+            if ($existingRecord) {
+                // Update existing record
+                $newTotal = $existingRecord['total_points'] + $points;
+                $sql = "UPDATE driver_license_points SET total_points = ?, last_violation_date = ? WHERE license_number = ?";
+                $params = [$newTotal, date('Y-m-d H:i:s'), $licensePlate];
+
+                // Check for suspension
+                if ($newTotal >= $this->config['license_suspension_threshold']) {
+                    $sql = "UPDATE driver_license_points SET total_points = ?, last_violation_date = ?, status = 'suspended', suspension_date = ? WHERE license_number = ?";
+                    $params = [$newTotal, date('Y-m-d H:i:s'), date('Y-m-d'), $licensePlate];
+                }
+
+                return $db->execute($sql, $params);
+            } else {
+                // Create new record
+                $sql = "INSERT INTO driver_license_points (license_number, total_points, last_violation_date) VALUES (?, ?, ?)";
+                return $db->execute($sql, [$licensePlate, $points, date('Y-m-d H:i:s')]);
+            }
+        } catch (\Exception $e) {
+            error_log("Error updating driver points: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Start ticket workflow
+     */
+    private function startTicketWorkflow(string $ticketNumber, string $type): bool
+    {
+        try {
+            $workflowEngine = new WorkflowEngine();
+            $workflowType = $type === 'traffic' ? 'traffic_ticket_process' : 'parking_violation_process';
+            return $workflowEngine->startWorkflow($workflowType, $ticketNumber);
+        } catch (\Exception $e) {
+            error_log("Error starting ticket workflow: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Advance workflow
+     */
+    private function advanceWorkflow(string $ticketNumber, string $step): bool
+    {
+        try {
+            $workflowEngine = new WorkflowEngine();
+            return $workflowEngine->advanceWorkflow($ticketNumber, $step);
+        } catch (\Exception $e) {
+            error_log("Error advancing workflow: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send notification
+     */
+    private function sendNotification(string $type, ?int $userId, array $data): bool
+    {
+        try {
+            $notificationManager = new NotificationManager();
+            return $notificationManager->sendNotification($type, $userId, $data);
+        } catch (\Exception $e) {
+            error_log("Error sending notification: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save ticket appeal
+     */
+    private function saveTicketAppeal(array $appeal): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "INSERT INTO ticket_appeals (
+                ticket_number, ticket_type, appellant_name, appellant_email,
+                appellant_phone, appeal_reason, appeal_evidence, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $params = [
+                $appeal['ticket_number'],
+                $appeal['ticket_type'],
+                $appeal['appellant_name'],
+                $appeal['appellant_email'],
+                $appeal['appellant_phone'],
+                $appeal['appeal_reason'],
+                json_encode($appeal['appeal_evidence']),
+                $appeal['status']
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error saving ticket appeal: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get ticket appeal
+     */
+    private function getTicketAppeal(int $appealId): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM ticket_appeals WHERE id = ?";
+            $result = $db->fetch($sql, [$appealId]);
+
+            if ($result) {
+                $result['appeal_evidence'] = json_decode($result['appeal_evidence'], true);
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            error_log("Error getting ticket appeal: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update appeal decision
+     */
+    private function updateAppealDecision(int $appealId, string $decision, array $data): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "UPDATE ticket_appeals SET status = ?, decision = ?, decision_date = ?, reviewed_by = ? WHERE id = ?";
+            $params = [
+                $decision === 'approved' ? 'approved' : 'denied',
+                $data['decision_notes'] ?? '',
+                date('Y-m-d H:i:s'),
+                $data['reviewed_by'] ?? null,
+                $appealId
+            ];
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error updating appeal decision: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get driver points record
+     */
+    private function getDriverPointsRecord(string $licenseNumber): ?array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM driver_license_points WHERE license_number = ?";
+            return $db->fetch($sql, [$licenseNumber]);
+        } catch (\Exception $e) {
+            error_log("Error getting driver points record: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get pending court tickets
+     */
+    private function getPendingCourtTickets(): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            // Get traffic tickets pending court action
+            $trafficTickets = $db->fetchAll(
+                "SELECT ticket_number, 'traffic' as ticket_type FROM traffic_tickets WHERE status = 'court_pending'"
+            );
+
+            // Get parking violations pending court action
+            $parkingViolations = $db->fetchAll(
+                "SELECT violation_number as ticket_number, 'parking' as ticket_type FROM parking_violations WHERE status = 'court_pending'"
+            );
+
+            return array_merge($trafficTickets, $parkingViolations);
+        } catch (\Exception $e) {
+            error_log("Error getting pending court tickets: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Sync ticket with court system
+     */
+    private function syncTicketWithCourt(array $ticket): array
+    {
+        // This would integrate with actual court system API
+        // For now, return mock data
+        return [
+            'court_case_number' => 'C' . date('Y') . str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT),
+            'court_name' => $this->courtSettings['court_mapping']['traffic_court'],
+            'judge_name' => 'Judge ' . ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones'][array_rand(['Smith', 'Johnson', 'Williams', 'Brown', 'Jones'])],
+            'hearing_date' => date('Y-m-d H:i:s', strtotime('+30 days')),
+            'outcome' => 'pending',
+            'sync_status' => 'synced',
+            'last_sync' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    /**
+     * Update court integration
+     */
+    private function updateCourtIntegration(string $ticketNumber, array $courtData): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            // Check if record exists
+            $existing = $db->fetch("SELECT id FROM court_integrations WHERE ticket_number = ?", [$ticketNumber]);
+
+            if ($existing) {
+                // Update existing
+                $sql = "UPDATE court_integrations SET court_case_number = ?, court_name = ?, judge_name = ?, hearing_date = ?, outcome = ?, sync_status = ?, last_sync = ? WHERE ticket_number = ?";
+                $params = [
+                    $courtData['court_case_number'],
+                    $courtData['court_name'],
+                    $courtData['judge_name'],
+                    $courtData['hearing_date'],
+                    $courtData['outcome'],
+                    $courtData['sync_status'],
+                    $courtData['last_sync'],
+                    $ticketNumber
+                ];
+            } else {
+                // Insert new
+                $sql = "INSERT INTO court_integrations (ticket_number, ticket_type, court_case_number, court_name, judge_name, hearing_date, outcome, sync_status, last_sync) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $params = [
+                    $ticketNumber,
+                    'traffic', // Would need to determine type
+                    $courtData['court_case_number'],
+                    $courtData['court_name'],
+                    $courtData['judge_name'],
+                    $courtData['hearing_date'],
+                    $courtData['outcome'],
+                    $courtData['sync_status'],
+                    $courtData['last_sync']
+                ];
+            }
+
+            return $db->execute($sql, $params);
+        } catch (\Exception $e) {
+            error_log("Error updating court integration: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get traffic tickets (API handler)
+     */
+    public function getTrafficTickets(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM traffic_tickets WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['license_plate'])) {
+                $sql .= " AND license_plate = ?";
+                $params[] = $filters['license_plate'];
+            }
+
+            if (isset($filters['officer_id'])) {
+                $sql .= " AND officer_id = ?";
+                $params[] = $filters['officer_id'];
+            }
+
+            $sql .= " ORDER BY created_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['evidence_photos'] = json_decode($result['evidence_photos'], true);
+            }
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting traffic tickets: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve traffic tickets'
+            ];
+        }
+    }
+
+    /**
+     * Get traffic ticket (API handler)
+     */
+    public function getTrafficTicket(string $ticketNumber): array
+    {
+        $ticket = $this->getTicket($ticketNumber, 'traffic');
+
+        if (!$ticket) {
+            return [
+                'success' => false,
+                'error' => 'Traffic ticket not found'
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data' => $ticket
+        ];
+    }
+
+    /**
+     * Appeal traffic ticket (API handler)
+     */
+    public function appealTrafficTicket(string $ticketNumber, array $appealData): array
+    {
+        return $this->submitTicketAppeal($ticketNumber, 'traffic', $appealData);
+    }
+
+    /**
+     * Get parking violations (API handler)
+     */
+    public function getParkingViolations(array $filters = []): array
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "SELECT * FROM parking_violations WHERE 1=1";
+            $params = [];
+
+            if (isset($filters['status'])) {
+                $sql .= " AND status = ?";
+                $params[] = $filters['status'];
+            }
+
+            if (isset($filters['license_plate'])) {
+                $sql .= " AND license_plate = ?";
+                $params[] = $filters['license_plate'];
+            }
+
+            if (isset($filters['zone_type'])) {
+                $sql .= " AND zone_type = ?";
+                $params[] = $filters['zone_type'];
+            }
+
+            $sql .= " ORDER BY created_at DESC";
+
+            $results = $db->fetchAll($sql, $params);
+
+            // Decode JSON fields
+            foreach ($results as &$result) {
+                $result['evidence_photos'] = json_decode($result['evidence_photos'], true);
+            }
+
+            return [
+                'success' => true,
+                'data' => $results,
+                'count' => count($results)
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting parking violations: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to retrieve parking violations'
+            ];
+        }
+    }
+
+    /**
+     * Get driver points (API handler)
+     */
+    public function getDriverPoints(string $licenseNumber): array
+    {
+        $pointsData = $this->getDriverLicensePoints($licenseNumber);
+
+        return [
+            'success' => true,
+            'data' => $pointsData
+        ];
+    }
 
     /**
      * Get module statistics
      */
     public function getModuleStatistics(): array
     {
-        return [
-            'total_traffic_tickets' => 0, // Would query database
-            'total_parking_violations' => 0,
-            'total_revenue' => 0.00,
-            'paid_tickets' => 0,
-            'pending_appeals' => 0,
-            'court_pending' => 0
-        ];
+        try {
+            $db = Database::getInstance();
+
+            // Get traffic ticket statistics
+            $trafficStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_tickets,
+                    SUM(CASE WHEN status = 'paid' THEN fine_amount ELSE 0 END) as paid_amount,
+                    COUNT(CASE WHEN status = 'appealed' THEN 1 END) as appealed_tickets,
+                    COUNT(CASE WHEN status = 'court_pending' THEN 1 END) as court_pending
+                FROM traffic_tickets
+            ");
+
+            // Get parking violation statistics
+            $parkingStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_violations,
+                    SUM(CASE WHEN status = 'paid' THEN fine_amount ELSE 0 END) as paid_amount,
+                    COUNT(CASE WHEN status = 'appealed' THEN 1 END) as appealed_violations
+                FROM parking_violations
+            ");
+
+            // Get appeal statistics
+            $appealStats = $db->fetch("
+                SELECT
+                    COUNT(*) as total_appeals,
+                    COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_appeals,
+                    COUNT(CASE WHEN status = 'denied' THEN 1 END) as denied_appeals
+                FROM ticket_appeals
+            ");
+
+            return [
+                'total_traffic_tickets' => $trafficStats['total_tickets'] ?? 0,
+                'total_parking_violations' => $parkingStats['total_violations'] ?? 0,
+                'total_revenue' => ($trafficStats['paid_amount'] ?? 0) + ($parkingStats['paid_amount'] ?? 0),
+                'paid_tickets' => ($trafficStats['paid_amount'] ?? 0) + ($parkingStats['paid_amount'] ?? 0),
+                'pending_appeals' => ($trafficStats['appealed_tickets'] ?? 0) + ($parkingStats['appealed_violations'] ?? 0),
+                'court_pending' => $trafficStats['court_pending'] ?? 0,
+                'appeal_success_rate' => $appealStats['total_appeals'] > 0 ?
+                    round(($appealStats['approved_appeals'] / $appealStats['total_appeals']) * 100, 2) : 0
+            ];
+        } catch (\Exception $e) {
+            error_log("Error getting module statistics: " . $e->getMessage());
+            return [
+                'total_traffic_tickets' => 0,
+                'total_parking_violations' => 0,
+                'total_revenue' => 0.00,
+                'paid_tickets' => 0,
+                'pending_appeals' => 0,
+                'court_pending' => 0,
+                'appeal_success_rate' => 0
+            ];
+        }
     }
 }

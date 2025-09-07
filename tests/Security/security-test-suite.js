@@ -1,885 +1,838 @@
 /**
- * TPT Government Platform - Security Test Suite
+ * TPT Government Platform - Comprehensive Security Test Suite
  *
- * Comprehensive security testing for government platform compliance
+ * Advanced security testing covering authentication, authorization,
+ * data protection, network security, and compliance validation
  */
 
-const { expect } = require('chai')
-const axios = require('axios')
-const fs = require('fs')
-const path = require('path')
+const { expect } = require('chai');
+const axios = require('axios');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
-class SecurityTestSuite {
-    constructor(baseUrl = 'http://localhost:8000') {
-        this.baseUrl = baseUrl
-        this.sessionCookies = []
-        this.testResults = {
-            passed: 0,
-            failed: 0,
-            warnings: 0,
-            tests: []
+describe('TPT Government Platform - Security Test Suite', () => {
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const apiUrl = `${baseUrl}/api`;
+
+    // Test credentials
+    const testCredentials = {
+        admin: {
+            email: 'admin@test.gov',
+            password: 'AdminPass123!',
+            role: 'admin'
+        },
+        user: {
+            email: 'user@test.gov',
+            password: 'UserPass123!',
+            role: 'user'
+        },
+        service: {
+            email: 'service@test.gov',
+            password: 'ServicePass123!',
+            role: 'service_provider'
         }
-    }
+    };
 
-    /**
-     * Run all security tests
-     */
-    async runAllTests() {
-        console.log('🔒 Starting TPT Government Platform Security Test Suite\n')
+    // Test tokens
+    let adminToken = '';
+    let userToken = '';
+    let serviceToken = '';
 
-        try {
-            // Authentication & Authorization Tests
-            await this.runAuthenticationTests()
-            await this.runAuthorizationTests()
-
-            // Input Validation Tests
-            await this.runInputValidationTests()
-
-            // Session Management Tests
-            await this.runSessionManagementTests()
-
-            // Data Protection Tests
-            await this.runDataProtectionTests()
-
-            // API Security Tests
-            await this.runAPISecurityTests()
-
-            // File Upload Security Tests
-            await this.runFileUploadSecurityTests()
-
-            // Cross-Site Scripting (XSS) Tests
-            await this.runXSSTests()
-
-            // SQL Injection Tests
-            await this.runSQLInjectionTests()
-
-            // Cross-Site Request Forgery (CSRF) Tests
-            await this.runCSRFTests()
-
-            // Security Headers Tests
-            await this.runSecurityHeadersTests()
-
-            // Rate Limiting Tests
-            await this.runRateLimitingTests()
-
-            // SSL/TLS Tests
-            await this.runSSLTests()
-
-            // Generate report
-            this.generateSecurityReport()
-
-        } catch (error) {
-            console.error('❌ Security test suite failed:', error.message)
-            this.logTestResult('Security Test Suite', false, error.message)
+    // Test data
+    const testData = {
+        sensitiveDocument: {
+            title: 'Confidential Government Document',
+            content: 'This contains sensitive government information',
+            classification: 'TOP_SECRET'
+        },
+        userData: {
+            ssn: '123-45-6789',
+            medicalInfo: 'Patient has diabetes',
+            financialInfo: 'Bank account: 123456789'
         }
-    }
+    };
 
-    /**
-     * Authentication & Authorization Tests
-     */
-    async runAuthenticationTests() {
-        console.log('🔐 Testing Authentication & Authorization...')
+    before(async () => {
+        // Setup test environment
+        await setupTestEnvironment();
 
-        // Test 1: Invalid login attempts
-        await this.testInvalidLoginAttempts()
+        // Authenticate test users
+        adminToken = await authenticateUser(testCredentials.admin);
+        userToken = await authenticateUser(testCredentials.user);
+        serviceToken = await authenticateUser(testCredentials.service);
+    });
 
-        // Test 2: Brute force protection
-        await this.testBruteForceProtection()
+    describe('Authentication Security', () => {
+        it('should prevent brute force attacks', async () => {
+            const maxAttempts = 5;
+            let blocked = false;
 
-        // Test 3: Session fixation
-        await this.testSessionFixation()
-
-        // Test 4: Password policy enforcement
-        await this.testPasswordPolicy()
-
-        // Test 5: Account lockout
-        await this.testAccountLockout()
-
-        // Test 6: Multi-factor authentication
-        await this.testMultiFactorAuth()
-
-        // Test 7: Remember me functionality
-        await this.testRememberMeFunctionality()
-
-        // Test 8: Logout functionality
-        await this.testLogoutFunctionality()
-    }
-
-    /**
-     * Test invalid login attempts
-     */
-    async testInvalidLoginAttempts() {
-        const testName = 'Invalid Login Attempts'
-
-        try {
-            // Attempt multiple invalid logins
-            for (let i = 0; i < 5; i++) {
-                const response = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                    email: 'invalid@example.com',
-                    password: 'wrongpassword'
-                }, {
-                    validateStatus: () => true // Don't throw on error status
-                })
-
-                if (i < 4 && response.status !== 401) {
-                    throw new Error(`Expected 401 for invalid login attempt ${i + 1}, got ${response.status}`)
+            for (let i = 0; i < maxAttempts + 2; i++) {
+                try {
+                    await axios.post(`${apiUrl}/auth/login`, {
+                        email: testCredentials.user.email,
+                        password: 'wrongpassword'
+                    });
+                } catch (error) {
+                    if (error.response?.status === 429) {
+                        blocked = true;
+                        break;
+                    }
                 }
             }
 
-            this.logTestResult(testName, true, 'Invalid login attempts properly rejected')
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
+            expect(blocked).to.be.true;
+        });
 
-    /**
-     * Test brute force protection
-     */
-    async testBruteForceProtection() {
-        const testName = 'Brute Force Protection'
-
-        try {
-            // Attempt rapid login attempts
-            const promises = []
-            for (let i = 0; i < 10; i++) {
-                promises.push(
-                    axios.post(`${this.baseUrl}/api/auth/login`, {
-                        email: 'test@example.com',
-                        password: 'password123'
-                    }, {
-                        validateStatus: () => true,
-                        timeout: 5000
-                    })
-                )
-            }
-
-            const responses = await Promise.all(promises)
-            const blockedRequests = responses.filter(r => r.status === 429).length
-
-            if (blockedRequests > 0) {
-                this.logTestResult(testName, true, `Brute force protection working (${blockedRequests} requests blocked)`)
-            } else {
-                this.logTestResult(testName, false, 'Brute force protection not detected')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Test session fixation
-     */
-    async testSessionFixation() {
-        const testName = 'Session Fixation Protection'
-
-        try {
-            // Get initial session
-            const initialResponse = await axios.get(`${this.baseUrl}/api/auth/session`)
-            const initialSessionId = initialResponse.headers['set-cookie']?.[0]
-
-            // Login and check if session ID changed
-            const loginResponse = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'test@example.com',
-                password: 'password123'
-            })
-
-            const newSessionId = loginResponse.headers['set-cookie']?.[0]
-
-            if (initialSessionId !== newSessionId) {
-                this.logTestResult(testName, true, 'Session ID changed after login (session fixation protected)')
-            } else {
-                this.logTestResult(testName, false, 'Session ID not changed after login (vulnerable to session fixation)')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Test password policy enforcement
-     */
-    async testPasswordPolicy() {
-        const testName = 'Password Policy Enforcement'
-
-        try {
+        it('should enforce password complexity requirements', async () => {
             const weakPasswords = [
                 '123456',
                 'password',
                 'qwerty',
-                'abc123'
-            ]
+                'abc123',
+                'password123'
+            ];
 
-            let policyEnforced = false
             for (const password of weakPasswords) {
-                const response = await axios.post(`${this.baseUrl}/api/auth/register`, {
-                    email: 'test@example.com',
-                    password: password
-                }, {
-                    validateStatus: () => true
-                })
-
-                if (response.status === 400 && response.data?.error?.includes('password')) {
-                    policyEnforced = true
-                    break
+                try {
+                    await axios.post(`${apiUrl}/auth/register`, {
+                        email: `test${Date.now()}@example.com`,
+                        password: password,
+                        firstName: 'Test',
+                        lastName: 'User'
+                    });
+                    throw new Error('Weak password was accepted');
+                } catch (error) {
+                    expect(error.response?.status).to.be.oneOf([400, 422]);
+                    expect(error.response?.data?.message).to.include('password');
                 }
             }
+        });
 
-            if (policyEnforced) {
-                this.logTestResult(testName, true, 'Password policy properly enforced')
-            } else {
-                this.logTestResult(testName, false, 'Password policy not enforced')
+        it('should implement secure session management', async () => {
+            const response = await axios.post(`${apiUrl}/auth/login`, testCredentials.user);
+            const sessionToken = response.data.token;
+
+            // Verify token structure
+            const decoded = jwt.decode(sessionToken);
+            expect(decoded).to.have.property('exp');
+            expect(decoded).to.have.property('iat');
+            expect(decoded).to.have.property('userId');
+
+            // Test token expiration
+            const expiredToken = jwt.sign(
+                { userId: 1, exp: Math.floor(Date.now() / 1000) - 3600 },
+                'test-secret'
+            );
+
+            try {
+                await axios.get(`${apiUrl}/user/profile`, {
+                    headers: { Authorization: `Bearer ${expiredToken}` }
+                });
+                throw new Error('Expired token was accepted');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([401, 403]);
             }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
+        });
 
-    /**
-     * Test account lockout
-     */
-    async testAccountLockout() {
-        const testName = 'Account Lockout Protection'
+        it('should prevent session fixation attacks', async () => {
+            // Login with user credentials
+            const loginResponse = await axios.post(`${apiUrl}/auth/login`, testCredentials.user);
+            const initialToken = loginResponse.data.token;
 
-        try {
-            // Attempt multiple failed logins
-            for (let i = 0; i < 6; i++) {
-                await axios.post(`${this.baseUrl}/api/auth/login`, {
-                    email: 'test@example.com',
-                    password: 'wrongpassword'
-                }, {
-                    validateStatus: () => true
-                })
+            // Attempt to use the same session for different user
+            const adminLoginResponse = await axios.post(`${apiUrl}/auth/login`, testCredentials.admin);
+            const adminToken = adminLoginResponse.data.token;
+
+            // Verify tokens are different
+            expect(initialToken).to.not.equal(adminToken);
+
+            // Verify user cannot access admin resources with user token
+            try {
+                await axios.get(`${apiUrl}/admin/users`, {
+                    headers: { Authorization: `Bearer ${initialToken}` }
+                });
+                throw new Error('User token granted admin access');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([403, 401]);
             }
+        });
 
-            // Try valid login
-            const response = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'test@example.com',
-                password: 'password123'
-            }, {
-                validateStatus: () => true
-            })
+        it('should implement secure logout', async () => {
+            const loginResponse = await axios.post(`${apiUrl}/auth/login`, testCredentials.user);
+            const token = loginResponse.data.token;
 
-            if (response.status === 423) { // Locked
-                this.logTestResult(testName, true, 'Account properly locked after failed attempts')
-            } else if (response.status === 200) {
-                this.logTestResult(testName, false, 'Account not locked after failed attempts')
-            } else {
-                this.logTestResult(testName, true, 'Account lockout mechanism in place')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Test multi-factor authentication
-     */
-    async testMultiFactorAuth() {
-        const testName = 'Multi-Factor Authentication'
-
-        try {
-            // Login with valid credentials
-            const loginResponse = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'test@example.com',
-                password: 'password123'
-            })
-
-            // Check if MFA is required
-            if (loginResponse.data?.requires_mfa) {
-                // Test MFA verification
-                const mfaResponse = await axios.post(`${this.baseUrl}/api/auth/mfa/verify`, {
-                    code: '123456' // Test code
-                })
-
-                if (mfaResponse.status === 200) {
-                    this.logTestResult(testName, true, 'MFA properly implemented and verified')
-                } else {
-                    this.logTestResult(testName, false, 'MFA verification failed')
-                }
-            } else {
-                this.logTestResult(testName, true, 'MFA not required for this account (acceptable)')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Test remember me functionality
-     */
-    async testRememberMeFunctionality() {
-        const testName = 'Remember Me Functionality'
-
-        try {
-            // Login with remember me
-            const response = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'test@example.com',
-                password: 'password123',
-                remember_me: true
-            })
-
-            const cookies = response.headers['set-cookie'] || []
-            const hasLongLivedCookie = cookies.some(cookie =>
-                cookie.includes('Max-Age=') &&
-                parseInt(cookie.split('Max-Age=')[1].split(';')[0]) > 86400 // > 1 day
-            )
-
-            if (hasLongLivedCookie) {
-                this.logTestResult(testName, true, 'Remember me creates long-lived session')
-            } else {
-                this.logTestResult(testName, false, 'Remember me does not create long-lived session')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Test logout functionality
-     */
-    async testLogoutFunctionality() {
-        const testName = 'Logout Functionality'
-
-        try {
-            // Login first
-            const loginResponse = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'test@example.com',
-                password: 'password123'
-            })
-
-            const sessionCookie = loginResponse.headers['set-cookie']?.[0]
+            // Verify token works before logout
+            const profileResponse = await axios.get(`${apiUrl}/user/profile`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            expect(profileResponse.status).to.equal(200);
 
             // Logout
-            const logoutResponse = await axios.post(`${this.baseUrl}/api/auth/logout`, {}, {
-                headers: {
-                    'Cookie': sessionCookie
+            await axios.post(`${apiUrl}/auth/logout`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            // Verify token is invalidated after logout
+            try {
+                await axios.get(`${apiUrl}/user/profile`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                throw new Error('Token still valid after logout');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([401, 403]);
+            }
+        });
+    });
+
+    describe('Authorization & Access Control', () => {
+        it('should enforce role-based access control', async () => {
+            const endpoints = [
+                { path: '/admin/users', method: 'GET', requiredRole: 'admin' },
+                { path: '/service-provider/dashboard', method: 'GET', requiredRole: 'service_provider' },
+                { path: '/user/profile', method: 'GET', requiredRole: 'user' }
+            ];
+
+            for (const endpoint of endpoints) {
+                // Test with user token (should fail for admin/service endpoints)
+                if (endpoint.requiredRole !== 'user') {
+                    try {
+                        await axios.get(`${apiUrl}${endpoint.path}`, {
+                            headers: { Authorization: `Bearer ${userToken}` }
+                        });
+                        throw new Error(`User accessed ${endpoint.requiredRole} endpoint`);
+                    } catch (error) {
+                        expect(error.response?.status).to.be.oneOf([403, 401]);
+                    }
                 }
-            })
 
-            // Try to access protected resource
-            const protectedResponse = await axios.get(`${this.baseUrl}/api/user/profile`, {
-                headers: {
-                    'Cookie': sessionCookie
-                },
-                validateStatus: () => true
-            })
-
-            if (protectedResponse.status === 401) {
-                this.logTestResult(testName, true, 'Logout properly invalidates session')
-            } else {
-                this.logTestResult(testName, false, 'Logout does not invalidate session')
+                // Test with appropriate token (should succeed)
+                const appropriateToken = getTokenForRole(endpoint.requiredRole);
+                const response = await axios.get(`${apiUrl}${endpoint.path}`, {
+                    headers: { Authorization: `Bearer ${appropriateToken}` }
+                });
+                expect(response.status).to.equal(200);
             }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
+        });
 
-    /**
-     * Authorization Tests
-     */
-    async runAuthorizationTests() {
-        console.log('🛡️  Testing Authorization...')
-
-        // Test 1: Role-based access control
-        await this.testRoleBasedAccess()
-
-        // Test 2: Permission validation
-        await this.testPermissionValidation()
-
-        // Test 3: Admin access controls
-        await this.testAdminAccessControls()
-
-        // Test 4: API authorization
-        await this.testAPIAuthorization()
-    }
-
-    /**
-     * Test role-based access control
-     */
-    async testRoleBasedAccess() {
-        const testName = 'Role-Based Access Control'
-
-        try {
-            // Login as regular user
-            const userLogin = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'user@example.com',
-                password: 'password123'
-            })
-
-            const userCookie = userLogin.headers['set-cookie']?.[0]
-
-            // Try to access admin resource
-            const adminResponse = await axios.get(`${this.baseUrl}/api/admin/users`, {
-                headers: { 'Cookie': userCookie },
-                validateStatus: () => true
-            })
-
-            if (adminResponse.status === 403) {
-                this.logTestResult(testName, true, 'Regular user properly denied admin access')
-            } else {
-                this.logTestResult(testName, false, 'Regular user has unauthorized admin access')
+        it('should prevent privilege escalation', async () => {
+            // Attempt to modify user role through API
+            try {
+                await axios.put(`${apiUrl}/user/profile`, {
+                    role: 'admin',
+                    email: testCredentials.user.email
+                }, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                throw new Error('User was able to escalate privileges');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([403, 400]);
             }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
 
-    /**
-     * Test permission validation
-     */
-    async testPermissionValidation() {
-        const testName = 'Permission Validation'
+            // Verify user still has original role
+            const profileResponse = await axios.get(`${apiUrl}/user/profile`, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+            expect(profileResponse.data.role).to.equal('user');
+        });
 
-        try {
-            // Login as user without building consent permissions
-            const userLogin = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'limited@example.com',
-                password: 'password123'
-            })
-
-            const userCookie = userLogin.headers['set-cookie']?.[0]
-
-            // Try to create building consent
-            const consentResponse = await axios.post(`${this.baseUrl}/api/building-consents`, {
-                property_address: '123 Test St',
-                application_type: 'New Construction'
+        it('should implement object-level permissions', async () => {
+            // Create a document as admin
+            const documentResponse = await axios.post(`${apiUrl}/documents`, {
+                title: 'Test Document',
+                content: 'Test content',
+                classification: 'CONFIDENTIAL'
             }, {
-                headers: { 'Cookie': userCookie },
-                validateStatus: () => true
-            })
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
 
-            if (consentResponse.status === 403) {
-                this.logTestResult(testName, true, 'Permission validation working correctly')
-            } else {
-                this.logTestResult(testName, false, 'Permission validation not enforced')
+            const documentId = documentResponse.data.id;
+
+            // Try to access document as different user
+            try {
+                await axios.get(`${apiUrl}/documents/${documentId}`, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                throw new Error('User accessed unauthorized document');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([403, 404]);
             }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
 
-    /**
-     * Input Validation Tests
-     */
-    async runInputValidationTests() {
-        console.log('📝 Testing Input Validation...')
+            // Admin should be able to access
+            const adminAccessResponse = await axios.get(`${apiUrl}/documents/${documentId}`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+            expect(adminAccessResponse.status).to.equal(200);
+        });
 
-        // Test 1: SQL injection prevention
-        await this.testSQLInjectionPrevention()
+        it('should enforce data classification restrictions', async () => {
+            const classifications = ['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'];
 
-        // Test 2: XSS prevention
-        await this.testXSSPrevention()
-
-        // Test 3: Command injection prevention
-        await this.testCommandInjectionPrevention()
-
-        // Test 4: File upload validation
-        await this.testFileUploadValidation()
-
-        // Test 5: Email validation
-        await this.testEmailValidation()
-
-        // Test 6: Phone number validation
-        await this.testPhoneValidation()
-
-        // Test 7: Address validation
-        await this.testAddressValidation()
-    }
-
-    /**
-     * Test SQL injection prevention
-     */
-    async testSQLInjectionPrevention() {
-        const testName = 'SQL Injection Prevention'
-
-        try {
-            const sqlPayloads = [
-                "' OR '1'='1",
-                "'; DROP TABLE users; --",
-                "' UNION SELECT * FROM users --",
-                "admin'--",
-                "1' OR '1' = '1"
-            ]
-
-            let injectionBlocked = true
-            for (const payload of sqlPayloads) {
-                const response = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                    email: payload,
-                    password: 'password123'
+            for (const classification of classifications) {
+                // Create document with specific classification
+                const docResponse = await axios.post(`${apiUrl}/documents`, {
+                    title: `Test ${classification} Document`,
+                    content: 'Test content',
+                    classification: classification
                 }, {
-                    validateStatus: () => true
-                })
+                    headers: { Authorization: `Bearer ${adminToken}` }
+                });
 
-                // If we get a 200, the injection might have worked
-                if (response.status === 200 && response.data?.user) {
-                    injectionBlocked = false
-                    break
+                const docId = docResponse.data.id;
+
+                // Test access based on user clearance level
+                const userClearanceResponse = await axios.get(`${apiUrl}/user/clearance`, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                const userClearance = userClearanceResponse.data.clearanceLevel;
+
+                const requiredClearance = getRequiredClearance(classification);
+
+                if (userClearance < requiredClearance) {
+                    try {
+                        await axios.get(`${apiUrl}/documents/${docId}`, {
+                            headers: { Authorization: `Bearer ${userToken}` }
+                        });
+                        throw new Error(`User with clearance ${userClearance} accessed ${classification} document`);
+                    } catch (error) {
+                        expect(error.response?.status).to.be.oneOf([403, 404]);
+                    }
                 }
             }
+        });
+    });
 
-            if (injectionBlocked) {
-                this.logTestResult(testName, true, 'SQL injection attempts properly blocked')
-            } else {
-                this.logTestResult(testName, false, 'SQL injection vulnerability detected')
+    describe('Data Protection & Encryption', () => {
+        it('should encrypt sensitive data at rest', async () => {
+            // Create user with sensitive information
+            const sensitiveUserResponse = await axios.post(`${apiUrl}/users`, {
+                email: 'sensitive@test.gov',
+                password: 'TempPass123!',
+                firstName: 'Sensitive',
+                lastName: 'User',
+                ssn: testData.userData.ssn,
+                medicalInfo: testData.userData.medicalInfo,
+                financialInfo: testData.userData.financialInfo
+            }, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            const userId = sensitiveUserResponse.data.id;
+
+            // Retrieve user data
+            const userDataResponse = await axios.get(`${apiUrl}/users/${userId}`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            // Verify sensitive fields are encrypted in database
+            const rawDatabaseData = await queryDatabase(`SELECT * FROM users WHERE id = ${userId}`);
+            expect(rawDatabaseData[0].ssn).to.not.equal(testData.userData.ssn);
+            expect(rawDatabaseData[0].medical_info).to.not.equal(testData.userData.medicalInfo);
+            expect(rawDatabaseData[0].financial_info).to.not.equal(testData.userData.financialInfo);
+
+            // Verify data is properly decrypted in API response
+            expect(userDataResponse.data.ssn).to.equal(testData.userData.ssn);
+            expect(userDataResponse.data.medicalInfo).to.equal(testData.userData.medicalInfo);
+            expect(userDataResponse.data.financialInfo).to.equal(testData.userData.financialInfo);
+        });
+
+        it('should implement secure data transmission', async () => {
+            // Test HTTPS enforcement
+            try {
+                await axios.get('http://localhost:3000/api/user/profile', {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                throw new Error('HTTP request was not redirected to HTTPS');
+            } catch (error) {
+                // Should redirect to HTTPS or fail
+                expect(error.code).to.be.oneOf(['ECONNREFUSED', 'ENOTFOUND']);
             }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
 
-    /**
-     * Test XSS prevention
-     */
-    async testXSSPrevention() {
-        const testName = 'XSS Prevention'
+            // Test secure headers
+            const response = await axios.get(`${apiUrl}/user/profile`, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
 
-        try {
-            const xssPayloads = [
-                '<script>alert("XSS")</script>',
-                '<img src=x onerror=alert("XSS")>',
-                'javascript:alert("XSS")',
-                '<iframe src="javascript:alert(\'XSS\')"></iframe>',
-                '<svg onload=alert("XSS")>'
-            ]
+            expect(response.headers).to.have.property('strict-transport-security');
+            expect(response.headers).to.have.property('x-content-type-options');
+            expect(response.headers).to.have.property('x-frame-options');
+            expect(response.headers).to.have.property('x-xss-protection');
+            expect(response.headers['content-security-policy']).to.exist;
+        });
 
-            let xssBlocked = true
-            for (const payload of xssPayloads) {
-                // Test in form input
-                const response = await axios.post(`${this.baseUrl}/api/contact`, {
-                    name: 'Test User',
-                    email: 'test@example.com',
-                    message: payload
+        it('should protect against data leakage', async () => {
+            // Test error messages don't leak sensitive information
+            try {
+                await axios.get(`${apiUrl}/users/99999`, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+            } catch (error) {
+                expect(error.response?.data?.message).to.not.include('SQL');
+                expect(error.response?.data?.message).to.not.include('database');
+                expect(error.response?.data?.message).to.not.include('stack trace');
+            }
+
+            // Test API responses don't include sensitive fields by default
+            const usersResponse = await axios.get(`${apiUrl}/users`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            usersResponse.data.forEach(user => {
+                expect(user).to.not.have.property('password');
+                expect(user).to.not.have.property('passwordHash');
+                expect(user).to.not.have.property('ssn');
+                expect(user).to.not.have.property('medicalInfo');
+            });
+        });
+
+        it('should implement secure file upload', async () => {
+            const maliciousFile = Buffer.from('<script>alert("XSS")</script>', 'utf8');
+            const maliciousFileName = '../../../etc/passwd';
+
+            try {
+                await axios.post(`${apiUrl}/documents/upload`, {
+                    file: maliciousFile,
+                    filename: maliciousFileName,
+                    contentType: 'text/html'
                 }, {
-                    validateStatus: () => true
-                })
+                    headers: {
+                        Authorization: `Bearer ${userToken}`,
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                throw new Error('Malicious file upload was allowed');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([400, 403, 422]);
+            }
 
-                // Check if the response contains the script tags
-                if (response.data && typeof response.data === 'string' &&
-                    (response.data.includes('<script>') || response.data.includes('javascript:'))) {
-                    xssBlocked = false
-                    break
+            // Test file type validation
+            const validFile = fs.readFileSync(path.join(__dirname, 'fixtures/valid-document.pdf'));
+            const uploadResponse = await axios.post(`${apiUrl}/documents/upload`, {
+                file: validFile,
+                filename: 'valid-document.pdf',
+                contentType: 'application/pdf'
+            }, {
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                    'Content-Type': 'multipart/form-data'
                 }
+            });
+
+            expect(uploadResponse.status).to.equal(200);
+            expect(uploadResponse.data).to.have.property('fileId');
+        });
+    });
+
+    describe('Network Security', () => {
+        it('should prevent common web vulnerabilities', async () => {
+            // Test XSS prevention
+            const xssPayload = '<script>alert("XSS")</script>';
+            try {
+                await axios.post(`${apiUrl}/documents`, {
+                    title: xssPayload,
+                    content: 'Test content'
+                }, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                throw new Error('XSS payload was accepted');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([400, 422]);
             }
 
-            if (xssBlocked) {
-                this.logTestResult(testName, true, 'XSS payloads properly sanitized')
-            } else {
-                this.logTestResult(testName, false, 'XSS vulnerability detected')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Session Management Tests
-     */
-    async runSessionManagementTests() {
-        console.log('🔑 Testing Session Management...')
-
-        // Test 1: Session timeout
-        await this.testSessionTimeout()
-
-        // Test 2: Concurrent session handling
-        await this.testConcurrentSessions()
-
-        // Test 3: Session invalidation
-        await this.testSessionInvalidation()
-
-        // Test 4: Secure cookie attributes
-        await this.testSecureCookies()
-    }
-
-    /**
-     * Test session timeout
-     */
-    async testSessionTimeout() {
-        const testName = 'Session Timeout'
-
-        try {
-            // Login and get session
-            const loginResponse = await axios.post(`${this.baseUrl}/api/auth/login`, {
-                email: 'test@example.com',
-                password: 'password123'
-            })
-
-            const sessionCookie = loginResponse.headers['set-cookie']?.[0]
-
-            // Wait for session timeout (simulate by making request after timeout)
-            await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second
-
-            // Try to access protected resource
-            const protectedResponse = await axios.get(`${this.baseUrl}/api/user/profile`, {
-                headers: { 'Cookie': sessionCookie },
-                validateStatus: () => true
-            })
-
-            if (protectedResponse.status === 401) {
-                this.logTestResult(testName, true, 'Session properly timed out')
-            } else {
-                this.logTestResult(testName, true, 'Session timeout not triggered (may be configured for longer timeout)')
-            }
-        } catch (error) {
-            this.logTestResult(testName, false, error.message)
-        }
-    }
-
-    /**
-     * Data Protection Tests
-     */
-    async runDataProtectionTests() {
-        console.log('🔒 Testing Data Protection...')
-
-        // Test 1: Data encryption at rest
-        await this.testDataEncryption()
-
-        // Test 2: Data encryption in transit
-        await this.testDataInTransit()
-
-        // Test 3: GDPR compliance
-        await this.testGDPRCompliance()
-
-        // Test 4: Data retention policies
-        await this.testDataRetention()
-
-        // Test 5: Data backup security
-        await this.testDataBackupSecurity()
-    }
-
-    /**
-     * API Security Tests
-     */
-    async runAPISecurityTests() {
-        console.log('🌐 Testing API Security...')
-
-        // Test 1: API authentication
-        await this.testAPIAuthentication()
-
-        // Test 2: API rate limiting
-        await this.testAPIRateLimiting()
-
-        // Test 3: API input validation
-        await this.testAPIInputValidation()
-
-        // Test 4: API error handling
-        await this.testAPIErrorHandling()
-
-        // Test 5: API versioning
-        await this.testAPIVersioning()
-    }
-
-    /**
-     * File Upload Security Tests
-     */
-    async runFileUploadSecurityTests() {
-        console.log('📁 Testing File Upload Security...')
-
-        // Test 1: File type validation
-        await this.testFileTypeValidation()
-
-        // Test 2: File size limits
-        await this.testFileSizeLimits()
-
-        // Test 3: Malicious file detection
-        await this.testMaliciousFileDetection()
-
-        // Test 4: File path traversal
-        await this.testFilePathTraversal()
-
-        // Test 5: Upload directory permissions
-        await this.testUploadDirectoryPermissions()
-    }
-
-    /**
-     * Security Headers Tests
-     */
-    async runSecurityHeadersTests() {
-        console.log('🛡️  Testing Security Headers...')
-
-        try {
-            const response = await axios.get(`${this.baseUrl}/`)
-            const headers = response.headers
-
-            // Test Content Security Policy
-            if (headers['content-security-policy']) {
-                this.logTestResult('Content Security Policy', true, 'CSP header present')
-            } else {
-                this.logTestResult('Content Security Policy', false, 'CSP header missing')
+            // Test SQL injection prevention
+            const sqlPayload = "'; DROP TABLE users; --";
+            try {
+                await axios.get(`${apiUrl}/users/search?q=${encodeURIComponent(sqlPayload)}`, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+            } catch (error) {
+                // Should not execute SQL or return database errors
+                expect(error.response?.data?.message).to.not.include('SQL');
+                expect(error.response?.data?.message).to.not.include('syntax');
             }
 
-            // Test X-Frame-Options
-            if (headers['x-frame-options']) {
-                this.logTestResult('X-Frame-Options', true, 'X-Frame-Options header present')
-            } else {
-                this.logTestResult('X-Frame-Options', false, 'X-Frame-Options header missing')
+            // Test command injection prevention
+            const commandPayload = '; rm -rf /';
+            try {
+                await axios.post(`${apiUrl}/system/execute`, {
+                    command: commandPayload
+                }, {
+                    headers: { Authorization: `Bearer ${adminToken}` }
+                });
+                throw new Error('Command injection was allowed');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([403, 400]);
             }
+        });
 
-            // Test X-Content-Type-Options
-            if (headers['x-content-type-options'] === 'nosniff') {
-                this.logTestResult('X-Content-Type-Options', true, 'X-Content-Type-Options properly set')
-            } else {
-                this.logTestResult('X-Content-Type-Options', false, 'X-Content-Type-Options not set or incorrect')
-            }
+        it('should implement rate limiting', async () => {
+            const requests = [];
 
-            // Test Strict-Transport-Security
-            if (headers['strict-transport-security']) {
-                this.logTestResult('Strict-Transport-Security', true, 'HSTS header present')
-            } else {
-                this.logTestResult('Strict-Transport-Security', false, 'HSTS header missing')
-            }
-
-            // Test Referrer-Policy
-            if (headers['referrer-policy']) {
-                this.logTestResult('Referrer-Policy', true, 'Referrer-Policy header present')
-            } else {
-                this.logTestResult('Referrer-Policy', false, 'Referrer-Policy header missing')
-            }
-
-        } catch (error) {
-            this.logTestResult('Security Headers', false, error.message)
-        }
-    }
-
-    /**
-     * Rate Limiting Tests
-     */
-    async runRateLimitingTests() {
-        console.log('⏱️  Testing Rate Limiting...')
-
-        try {
-            const requests = []
-
-            // Make multiple requests rapidly
+            // Make multiple rapid requests
             for (let i = 0; i < 100; i++) {
                 requests.push(
-                    axios.get(`${this.baseUrl}/api/public/data`, {
-                        validateStatus: () => true,
-                        timeout: 5000
-                    })
-                )
+                    axios.get(`${apiUrl}/user/profile`, {
+                        headers: { Authorization: `Bearer ${userToken}` }
+                    }).catch(error => error)
+                );
             }
 
-            const responses = await Promise.all(requests)
-            const rateLimited = responses.filter(r => r.status === 429).length
-            const successful = responses.filter(r => r.status === 200).length
+            const responses = await Promise.all(requests);
+            const rateLimitedResponses = responses.filter(response =>
+                response.response?.status === 429
+            );
 
-            if (rateLimited > 0) {
-                this.logTestResult('Rate Limiting', true, `${rateLimited} requests rate limited, ${successful} successful`)
-            } else {
-                this.logTestResult('Rate Limiting', false, 'No rate limiting detected')
+            expect(rateLimitedResponses.length).to.be.greaterThan(0);
+        });
+
+        it('should prevent CSRF attacks', async () => {
+            // Attempt request without CSRF token
+            try {
+                await axios.post(`${apiUrl}/user/profile`, {
+                    firstName: 'Hacked'
+                }, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                    // Missing CSRF token
+                });
+                throw new Error('CSRF protection failed');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([403, 419]);
             }
 
-        } catch (error) {
-            this.logTestResult('Rate Limiting', false, error.message)
-        }
-    }
-
-    /**
-     * SSL/TLS Tests
-     */
-    async runSSLTests() {
-        console.log('🔒 Testing SSL/TLS...')
-
-        try {
-            // Test HTTPS redirect
-            const httpResponse = await axios.get(`http://${this.baseUrl.replace('https://', '').replace('http://', '')}`, {
-                maxRedirects: 0,
-                validateStatus: () => true
-            })
-
-            if (httpResponse.status === 301 || httpResponse.status === 302) {
-                const location = httpResponse.headers.location
-                if (location && location.startsWith('https://')) {
-                    this.logTestResult('HTTPS Redirect', true, 'HTTP properly redirects to HTTPS')
-                } else {
-                    this.logTestResult('HTTPS Redirect', false, 'HTTP redirect does not go to HTTPS')
+            // Test with valid CSRF token
+            const csrfToken = await getCsrfToken();
+            const validResponse = await axios.post(`${apiUrl}/user/profile`, {
+                firstName: 'Updated'
+            }, {
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                    'X-CSRF-Token': csrfToken
                 }
-            } else {
-                this.logTestResult('HTTPS Redirect', false, 'No HTTPS redirect detected')
+            });
+
+            expect(validResponse.status).to.equal(200);
+        });
+
+        it('should implement secure CORS policy', async () => {
+            // Test preflight request
+            const preflightResponse = await axios.options(`${apiUrl}/user/profile`, {
+                headers: {
+                    'Origin': 'https://malicious-site.com',
+                    'Access-Control-Request-Method': 'GET',
+                    'Access-Control-Request-Headers': 'Authorization'
+                }
+            });
+
+            // Should not allow malicious origin
+            expect(preflightResponse.headers['access-control-allow-origin']).to.not.equal('https://malicious-site.com');
+
+            // Test with allowed origin
+            const allowedOrigin = baseUrl.replace('http://', 'https://');
+            const allowedResponse = await axios.get(`${apiUrl}/user/profile`, {
+                headers: {
+                    'Origin': allowedOrigin,
+                    Authorization: `Bearer ${userToken}`
+                }
+            });
+
+            expect(allowedResponse.headers['access-control-allow-origin']).to.equal(allowedOrigin);
+        });
+    });
+
+    describe('Compliance & Audit', () => {
+        it('should maintain comprehensive audit logs', async () => {
+            // Perform various operations
+            await axios.post(`${apiUrl}/documents`, {
+                title: 'Audit Test Document',
+                content: 'Test content for audit logging'
+            }, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+
+            await axios.put(`${apiUrl}/user/profile`, {
+                firstName: 'Updated'
+            }, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+
+            // Retrieve audit logs
+            const auditResponse = await axios.get(`${apiUrl}/audit/logs`, {
+                headers: { Authorization: `Bearer ${adminToken}` },
+                params: {
+                    userId: getUserIdFromToken(userToken),
+                    dateFrom: new Date(Date.now() - 3600000).toISOString(), // Last hour
+                    dateTo: new Date().toISOString()
+                }
+            });
+
+            const auditLogs = auditResponse.data;
+            expect(auditLogs.length).to.be.greaterThan(0);
+
+            // Verify audit log structure
+            auditLogs.forEach(log => {
+                expect(log).to.have.property('timestamp');
+                expect(log).to.have.property('userId');
+                expect(log).to.have.property('action');
+                expect(log).to.have.property('resource');
+                expect(log).to.have.property('ipAddress');
+                expect(log).to.have.property('userAgent');
+            });
+
+            // Verify specific actions are logged
+            const actions = auditLogs.map(log => log.action);
+            expect(actions).to.include('DOCUMENT_CREATE');
+            expect(actions).to.include('USER_PROFILE_UPDATE');
+        });
+
+        it('should comply with GDPR requirements', async () => {
+            const userId = getUserIdFromToken(userToken);
+
+            // Test data portability (export user data)
+            const exportResponse = await axios.get(`${apiUrl}/user/data-export`, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+
+            expect(exportResponse.status).to.equal(200);
+            expect(exportResponse.data).to.have.property('personalData');
+            expect(exportResponse.data).to.have.property('documents');
+            expect(exportResponse.data).to.have.property('activityLogs');
+
+            // Test right to erasure
+            const erasureResponse = await axios.post(`${apiUrl}/user/delete-account`, {
+                reason: 'Testing GDPR compliance',
+                confirmDeletion: true
+            }, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+
+            expect(erasureResponse.status).to.equal(200);
+
+            // Verify user data is anonymized/deleted
+            try {
+                await axios.get(`${apiUrl}/user/profile`, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                throw new Error('User data still accessible after deletion');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([401, 404]);
+            }
+        });
+
+        it('should implement data retention policies', async () => {
+            // Create temporary data
+            const tempDocResponse = await axios.post(`${apiUrl}/documents`, {
+                title: 'Temporary Document',
+                content: 'This document should be automatically deleted',
+                retentionPeriod: 1 // 1 day
+            }, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+
+            const docId = tempDocResponse.data.id;
+
+            // Fast-forward time (simulate retention period expiry)
+            await simulateTimeAdvance(25 * 60 * 60 * 1000); // 25 hours
+
+            // Check if document is automatically deleted
+            try {
+                await axios.get(`${apiUrl}/documents/${docId}`, {
+                    headers: { Authorization: `Bearer ${userToken}` }
+                });
+                throw new Error('Document not automatically deleted');
+            } catch (error) {
+                expect(error.response?.status).to.equal(404);
+            }
+        });
+
+        it('should detect and prevent security anomalies', async () => {
+            // Simulate suspicious activity
+            const suspiciousRequests = [];
+
+            // Multiple failed login attempts
+            for (let i = 0; i < 10; i++) {
+                suspiciousRequests.push(
+                    axios.post(`${apiUrl}/auth/login`, {
+                        email: testCredentials.user.email,
+                        password: 'wrongpassword'
+                    }).catch(error => error)
+                );
             }
 
-            // Test SSL certificate
-            const httpsResponse = await axios.get(`${this.baseUrl}`)
-            if (httpsResponse.request.protocol === 'https:') {
-                this.logTestResult('SSL Certificate', true, 'HTTPS connection established')
-            } else {
-                this.logTestResult('SSL Certificate', false, 'Not using HTTPS')
+            await Promise.all(suspiciousRequests);
+
+            // Check if security alert is generated
+            const alertsResponse = await axios.get(`${apiUrl}/admin/security-alerts`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            const bruteForceAlerts = alertsResponse.data.filter(alert =>
+                alert.type === 'BRUTE_FORCE_ATTACK'
+            );
+
+            expect(bruteForceAlerts.length).to.be.greaterThan(0);
+
+            // Verify account is temporarily locked
+            try {
+                await axios.post(`${apiUrl}/auth/login`, testCredentials.user);
+                throw new Error('Account not locked after brute force attempt');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([423, 429]); // Locked or rate limited
+            }
+        });
+    });
+
+    describe('Infrastructure Security', () => {
+        it('should secure API endpoints', async () => {
+            const endpoints = [
+                '/api/admin/users',
+                '/api/admin/system-config',
+                '/api/admin/database-backup',
+                '/api/user/profile',
+                '/api/documents/confidential'
+            ];
+
+            for (const endpoint of endpoints) {
+                // Test without authentication
+                try {
+                    await axios.get(`${baseUrl}${endpoint}`);
+                    throw new Error(`Endpoint ${endpoint} accessible without authentication`);
+                } catch (error) {
+                    expect(error.response?.status).to.be.oneOf([401, 403]);
+                }
+
+                // Test with invalid token
+                try {
+                    await axios.get(`${baseUrl}${endpoint}`, {
+                        headers: { Authorization: 'Bearer invalid-token' }
+                    });
+                    throw new Error(`Endpoint ${endpoint} accessible with invalid token`);
+                } catch (error) {
+                    expect(error.response?.status).to.be.oneOf([401, 403]);
+                }
+            }
+        });
+
+        it('should implement secure configuration management', async () => {
+            // Test that sensitive configuration is not exposed
+            const configResponse = await axios.get(`${apiUrl}/system/config`, {
+                headers: { Authorization: `Bearer ${adminToken}` }
+            });
+
+            // Should not expose sensitive data
+            expect(configResponse.data).to.not.have.property('databasePassword');
+            expect(configResponse.data).to.not.have.property('jwtSecret');
+            expect(configResponse.data).to.not.have.property('apiKeys');
+
+            // Test configuration validation
+            try {
+                await axios.put(`${apiUrl}/system/config`, {
+                    databaseHost: '', // Invalid empty value
+                    jwtSecret: 'short'
+                }, {
+                    headers: { Authorization: `Bearer ${adminToken}` }
+                });
+                throw new Error('Invalid configuration was accepted');
+            } catch (error) {
+                expect(error.response?.status).to.be.oneOf([400, 422]);
+            }
+        });
+
+        it('should secure third-party integrations', async () => {
+            // Test payment gateway integration security
+            const paymentResponse = await axios.post(`${apiUrl}/payments/process`, {
+                amount: 100.00,
+                currency: 'USD',
+                paymentMethod: 'credit_card',
+                cardNumber: '4111111111111111',
+                expiryMonth: 12,
+                expiryYear: 2025,
+                cvv: '123'
+            }, {
+                headers: { Authorization: `Bearer ${userToken}` }
+            });
+
+            // Verify payment data is not logged in plain text
+            const logsResponse = await axios.get(`${apiUrl}/admin/logs`, {
+                headers: { Authorization: `Bearer ${adminToken}` },
+                params: { type: 'payment' }
+            });
+
+            logsResponse.data.forEach(log => {
+                expect(log.message).to.not.include('4111111111111111');
+                expect(log.message).to.not.include('123');
+            });
+
+            // Test external API rate limiting
+            const externalRequests = [];
+            for (let i = 0; i < 50; i++) {
+                externalRequests.push(
+                    axios.get(`${apiUrl}/external/weather`, {
+                        headers: { Authorization: `Bearer ${userToken}` }
+                    }).catch(error => error)
+                );
             }
 
-        } catch (error) {
-            this.logTestResult('SSL/TLS Tests', false, error.message)
+            const externalResponses = await Promise.all(externalRequests);
+            const rateLimited = externalResponses.filter(response =>
+                response.response?.status === 429
+            );
+
+            expect(rateLimited.length).to.be.greaterThan(0);
+        });
+    });
+
+    // Helper functions
+    async function authenticateUser(credentials) {
+        const response = await axios.post(`${apiUrl}/auth/login`, credentials);
+        return response.data.token;
+    }
+
+    function getTokenForRole(role) {
+        switch (role) {
+            case 'admin': return adminToken;
+            case 'service_provider': return serviceToken;
+            case 'user': return userToken;
+            default: return userToken;
         }
     }
 
-    /**
-     * Log test result
-     */
-    logTestResult(testName, passed, message = '') {
-        this.testResults.tests.push({
-            name: testName,
-            passed: passed,
-            message: message,
-            timestamp: new Date().toISOString()
-        })
-
-        if (passed) {
-            this.testResults.passed++
-            console.log(`✅ ${testName}: ${message}`)
-        } else {
-            this.testResults.failed++
-            console.log(`❌ ${testName}: ${message}`)
-        }
+    function getRequiredClearance(classification) {
+        const clearanceLevels = {
+            'PUBLIC': 1,
+            'INTERNAL': 2,
+            'CONFIDENTIAL': 3,
+            'SECRET': 4,
+            'TOP_SECRET': 5
+        };
+        return clearanceLevels[classification] || 1;
     }
 
-    /**
-     * Generate security report
-     */
-    generateSecurityReport() {
-        console.log('\n📊 Security Test Results Summary:')
-        console.log(`✅ Passed: ${this.testResults.passed}`)
-        console.log(`❌ Failed: ${this.testResults.failed}`)
-        console.log(`⚠️  Warnings: ${this.testResults.warnings}`)
-        console.log(`📈 Total Tests: ${this.testResults.tests.length}`)
-
-        const passRate = (this.testResults.passed / this.testResults.tests.length * 100).toFixed(1)
-        console.log(`🎯 Pass Rate: ${passRate}%`)
-
-        // Generate detailed report
-        const report = {
-            summary: {
-                total: this.testResults.tests.length,
-                passed: this.testResults.passed,
-                failed: this.testResults.failed,
-                warnings: this.testResults.warnings,
-                passRate: `${passRate}%`
-            },
-            timestamp: new Date().toISOString(),
-            results: this.testResults.tests
-        }
-
-        // Save report to file
-        const reportPath = path.join(__dirname, 'security-report.json')
-        fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
-        console.log(`📄 Detailed report saved to: ${reportPath}`)
-
-        // Overall assessment
-        if (passRate >= 90) {
-            console.log('🎉 Excellent! Security posture is strong.')
-        } else if (passRate >= 75) {
-            console.log('👍 Good security posture with some areas for improvement.')
-        } else if (passRate >= 60) {
-            console.log('⚠️  Security posture needs significant improvement.')
-        } else {
-            console.log('🚨 Critical security vulnerabilities detected!')
-        }
+    function getUserIdFromToken(token) {
+        const decoded = jwt.decode(token);
+        return decoded.userId;
     }
-}
 
-// Export for use in other modules
-module.exports = SecurityTestSuite
+    async function getCsrfToken() {
+        const response = await axios.get(`${apiUrl}/csrf-token`, {
+            headers: { Authorization: `Bearer ${userToken}` }
+        });
+        return response.data.token;
+    }
 
-// Run tests if called directly
-if (require.main === module) {
-    const testSuite = new SecurityTestSuite()
-    testSuite.runAllTests().catch(console.error)
-}
+    async function queryDatabase(query) {
+        // This would be implemented to directly query the test database
+        return [];
+    }
+
+    async function setupTestEnvironment() {
+        // Setup test database, users, and initial data
+        await axios.post(`${baseUrl}/test/setup`);
+    }
+
+    async function simulateTimeAdvance(milliseconds) {
+        // This would be implemented to fast-forward time in test environment
+        await axios.post(`${baseUrl}/test/advance-time`, { milliseconds });
+    }
+});

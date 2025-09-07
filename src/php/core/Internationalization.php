@@ -1,376 +1,532 @@
 <?php
 /**
- * TPT Government Platform - Internationalization (i18n) System
+ * TPT Government Platform - Internationalization & Localization System
  *
- * Comprehensive internationalization and localization system
- * supporting 50+ languages for government applications
+ * Comprehensive i18n system supporting 50+ languages, RTL languages,
+ * cultural formatting, and dynamic content translation
  */
-
-namespace Core;
 
 class Internationalization
 {
-    /**
-     * Current language code
-     */
-    private string $currentLanguage = 'en';
+    private array $config;
+    private array $translations;
+    private array $localeData;
+    private string $currentLocale;
+    private string $fallbackLocale;
+    private array $supportedLocales;
+    private array $pluralRules;
+    private array $dateFormats;
+    private array $numberFormats;
+    private array $currencyFormats;
 
     /**
-     * Fallback language code
+     * Supported locales configuration
      */
-    private string $fallbackLanguage = 'en';
+    private array $localeConfig = [
+        'supported_locales' => [
+            // European Languages
+            'en' => ['name' => 'English', 'native' => 'English', 'direction' => 'ltr', 'flag' => '🇺🇸'],
+            'es' => ['name' => 'Spanish', 'native' => 'Español', 'direction' => 'ltr', 'flag' => '🇪🇸'],
+            'fr' => ['name' => 'French', 'native' => 'Français', 'direction' => 'ltr', 'flag' => '🇫🇷'],
+            'de' => ['name' => 'German', 'native' => 'Deutsch', 'direction' => 'ltr', 'flag' => '🇩🇪'],
+            'it' => ['name' => 'Italian', 'native' => 'Italiano', 'direction' => 'ltr', 'flag' => '🇮🇹'],
+            'pt' => ['name' => 'Portuguese', 'native' => 'Português', 'direction' => 'ltr', 'flag' => '🇵🇹'],
+            'ru' => ['name' => 'Russian', 'native' => 'Русский', 'direction' => 'ltr', 'flag' => '🇷🇺'],
+            'nl' => ['name' => 'Dutch', 'native' => 'Nederlands', 'direction' => 'ltr', 'flag' => '🇳🇱'],
+            'sv' => ['name' => 'Swedish', 'native' => 'Svenska', 'direction' => 'ltr', 'flag' => '🇸🇪'],
+            'da' => ['name' => 'Danish', 'native' => 'Dansk', 'direction' => 'ltr', 'flag' => '🇩🇰'],
+            'no' => ['name' => 'Norwegian', 'native' => 'Norsk', 'direction' => 'ltr', 'flag' => '🇳🇴'],
+            'fi' => ['name' => 'Finnish', 'native' => 'Suomi', 'direction' => 'ltr', 'flag' => '🇫🇮'],
+            'pl' => ['name' => 'Polish', 'native' => 'Polski', 'direction' => 'ltr', 'flag' => '🇵🇱'],
+            'cs' => ['name' => 'Czech', 'native' => 'Čeština', 'direction' => 'ltr', 'flag' => '🇨🇿'],
+            'sk' => ['name' => 'Slovak', 'native' => 'Slovenčina', 'direction' => 'ltr', 'flag' => '🇸🇰'],
+            'hu' => ['name' => 'Hungarian', 'native' => 'Magyar', 'direction' => 'ltr', 'flag' => '🇭🇺'],
+            'ro' => ['name' => 'Romanian', 'native' => 'Română', 'direction' => 'ltr', 'flag' => '🇷🇴'],
+            'bg' => ['name' => 'Bulgarian', 'native' => 'Български', 'direction' => 'ltr', 'flag' => '🇧🇬'],
+            'hr' => ['name' => 'Croatian', 'native' => 'Hrvatski', 'direction' => 'ltr', 'flag' => '🇭🇷'],
+            'sl' => ['name' => 'Slovenian', 'native' => 'Slovenščina', 'direction' => 'ltr', 'flag' => '🇸🇮'],
 
-    /**
-     * Available languages
-     */
-    private array $availableLanguages = [
-        'en' => ['name' => 'English', 'native' => 'English', 'rtl' => false],
-        'es' => ['name' => 'Spanish', 'native' => 'Español', 'rtl' => false],
-        'fr' => ['name' => 'French', 'native' => 'Français', 'rtl' => false],
-        'de' => ['name' => 'German', 'native' => 'Deutsch', 'rtl' => false],
-        'zh' => ['name' => 'Chinese', 'native' => '中文', 'rtl' => false],
-        'ar' => ['name' => 'Arabic', 'native' => 'العربية', 'rtl' => true],
-        'hi' => ['name' => 'Hindi', 'native' => 'हिन्दी', 'rtl' => false],
-        'pt' => ['name' => 'Portuguese', 'native' => 'Português', 'rtl' => false],
-        'ru' => ['name' => 'Russian', 'native' => 'Русский', 'rtl' => false],
-        'ja' => ['name' => 'Japanese', 'native' => '日本語', 'rtl' => false],
-        'ko' => ['name' => 'Korean', 'native' => '한국어', 'rtl' => false],
-        'it' => ['name' => 'Italian', 'native' => 'Italiano', 'rtl' => false],
-        'nl' => ['name' => 'Dutch', 'native' => 'Nederlands', 'rtl' => false],
-        'sv' => ['name' => 'Swedish', 'native' => 'Svenska', 'rtl' => false],
-        'da' => ['name' => 'Danish', 'native' => 'Dansk', 'rtl' => false],
-        'no' => ['name' => 'Norwegian', 'native' => 'Norsk', 'rtl' => false],
-        'fi' => ['name' => 'Finnish', 'native' => 'Suomi', 'rtl' => false],
-        'pl' => ['name' => 'Polish', 'native' => 'Polski', 'rtl' => false],
-        'tr' => ['name' => 'Turkish', 'native' => 'Türkçe', 'rtl' => false],
-        'he' => ['name' => 'Hebrew', 'native' => 'עברית', 'rtl' => true],
-        'fa' => ['name' => 'Persian', 'native' => 'فارسی', 'rtl' => true],
-        'ur' => ['name' => 'Urdu', 'native' => 'اردو', 'rtl' => true],
-        'th' => ['name' => 'Thai', 'native' => 'ไทย', 'rtl' => false],
-        'vi' => ['name' => 'Vietnamese', 'native' => 'Tiếng Việt', 'rtl' => false],
-        'id' => ['name' => 'Indonesian', 'native' => 'Bahasa Indonesia', 'rtl' => false],
-        'ms' => ['name' => 'Malay', 'native' => 'Bahasa Melayu', 'rtl' => false],
-        'tl' => ['name' => 'Filipino', 'native' => 'Filipino', 'rtl' => false],
-        'sw' => ['name' => 'Swahili', 'native' => 'Kiswahili', 'rtl' => false],
-        'am' => ['name' => 'Amharic', 'native' => 'አማርኛ', 'rtl' => false],
-        'yo' => ['name' => 'Yoruba', 'native' => 'Yorùbá', 'rtl' => false],
-        'ig' => ['name' => 'Igbo', 'native' => 'Igbo', 'rtl' => false],
-        'ha' => ['name' => 'Hausa', 'native' => 'Hausa', 'rtl' => true],
-        'bn' => ['name' => 'Bengali', 'native' => 'বাংলা', 'rtl' => false],
-        'ta' => ['name' => 'Tamil', 'native' => 'தமிழ்', 'rtl' => false],
-        'te' => ['name' => 'Telugu', 'native' => 'తెలుగు', 'rtl' => false],
-        'mr' => ['name' => 'Marathi', 'native' => 'मराठी', 'rtl' => false],
-        'gu' => ['name' => 'Gujarati', 'native' => 'ગુજરાતી', 'rtl' => false],
-        'kn' => ['name' => 'Kannada', 'native' => 'ಕನ್ನಡ', 'rtl' => false],
-        'ml' => ['name' => 'Malayalam', 'native' => 'മലയാളം', 'rtl' => false],
-        'pa' => ['name' => 'Punjabi', 'native' => 'ਪੰਜਾਬੀ', 'rtl' => false],
-        'uk' => ['name' => 'Ukrainian', 'native' => 'Українська', 'rtl' => false],
-        'cs' => ['name' => 'Czech', 'native' => 'Čeština', 'rtl' => false],
-        'sk' => ['name' => 'Slovak', 'native' => 'Slovenčina', 'rtl' => false],
-        'hr' => ['name' => 'Croatian', 'native' => 'Hrvatski', 'rtl' => false],
-        'sl' => ['name' => 'Slovenian', 'native' => 'Slovenščina', 'rtl' => false],
-        'et' => ['name' => 'Estonian', 'native' => 'Eesti', 'rtl' => false],
-        'lv' => ['name' => 'Latvian', 'native' => 'Latviešu', 'rtl' => false],
-        'lt' => ['name' => 'Lithuanian', 'native' => 'Lietuvių', 'rtl' => false],
-        'bg' => ['name' => 'Bulgarian', 'native' => 'Български', 'rtl' => false],
-        'ro' => ['name' => 'Romanian', 'native' => 'Română', 'rtl' => false],
-        'hu' => ['name' => 'Hungarian', 'native' => 'Magyar', 'rtl' => false],
-        'el' => ['name' => 'Greek', 'native' => 'Ελληνικά', 'rtl' => false],
-        'ka' => ['name' => 'Georgian', 'native' => 'ქართული', 'rtl' => false],
-        'az' => ['name' => 'Azerbaijani', 'native' => 'Azərbaycan', 'rtl' => false],
-        'kk' => ['name' => 'Kazakh', 'native' => 'Қазақша', 'rtl' => false],
-        'uz' => ['name' => 'Uzbek', 'native' => 'Oʻzbekcha', 'rtl' => false]
+            // Asian Languages
+            'zh' => ['name' => 'Chinese', 'native' => '中文', 'direction' => 'ltr', 'flag' => '🇨🇳'],
+            'ja' => ['name' => 'Japanese', 'native' => '日本語', 'direction' => 'ltr', 'flag' => '🇯🇵'],
+            'ko' => ['name' => 'Korean', 'native' => '한국어', 'direction' => 'ltr', 'flag' => '🇰🇷'],
+            'hi' => ['name' => 'Hindi', 'native' => 'हिन्दी', 'direction' => 'ltr', 'flag' => '🇮🇳'],
+            'th' => ['name' => 'Thai', 'native' => 'ไทย', 'direction' => 'ltr', 'flag' => '🇹🇭'],
+            'vi' => ['name' => 'Vietnamese', 'native' => 'Tiếng Việt', 'direction' => 'ltr', 'flag' => '🇻🇳'],
+            'id' => ['name' => 'Indonesian', 'native' => 'Bahasa Indonesia', 'direction' => 'ltr', 'flag' => '🇮🇩'],
+            'ms' => ['name' => 'Malay', 'native' => 'Bahasa Melayu', 'direction' => 'ltr', 'flag' => '🇲🇾'],
+            'tl' => ['name' => 'Filipino', 'native' => 'Filipino', 'direction' => 'ltr', 'flag' => '🇵🇭'],
+
+            // Middle Eastern Languages
+            'ar' => ['name' => 'Arabic', 'native' => 'العربية', 'direction' => 'rtl', 'flag' => '🇸🇦'],
+            'he' => ['name' => 'Hebrew', 'native' => 'עברית', 'direction' => 'rtl', 'flag' => '🇮🇱'],
+            'fa' => ['name' => 'Persian', 'native' => 'فارسی', 'direction' => 'rtl', 'flag' => '🇮🇷'],
+            'ur' => ['name' => 'Urdu', 'native' => 'اردو', 'direction' => 'rtl', 'flag' => '🇵🇰'],
+            'tr' => ['name' => 'Turkish', 'native' => 'Türkçe', 'direction' => 'ltr', 'flag' => '🇹🇷'],
+
+            // African Languages
+            'sw' => ['name' => 'Swahili', 'native' => 'Kiswahili', 'direction' => 'ltr', 'flag' => '🇹🇿'],
+            'am' => ['name' => 'Amharic', 'native' => 'አማርኛ', 'direction' => 'ltr', 'flag' => '🇪🇹'],
+            'ha' => ['name' => 'Hausa', 'native' => 'Hausa', 'direction' => 'ltr', 'flag' => '🇳🇬'],
+            'yo' => ['name' => 'Yoruba', 'native' => 'Yorùbá', 'direction' => 'ltr', 'flag' => '🇳🇬'],
+            'zu' => ['name' => 'Zulu', 'native' => 'isiZulu', 'direction' => 'ltr', 'flag' => '🇿🇦'],
+
+            // American Languages
+            'pt-BR' => ['name' => 'Brazilian Portuguese', 'native' => 'Português Brasileiro', 'direction' => 'ltr', 'flag' => '🇧🇷'],
+            'es-MX' => ['name' => 'Mexican Spanish', 'native' => 'Español Mexicano', 'direction' => 'ltr', 'flag' => '🇲🇽'],
+            'es-AR' => ['name' => 'Argentine Spanish', 'native' => 'Español Argentino', 'direction' => 'ltr', 'flag' => '🇦🇷'],
+            'fr-CA' => ['name' => 'Canadian French', 'native' => 'Français Canadien', 'direction' => 'ltr', 'flag' => '🇨🇦'],
+
+            // Other Languages
+            'af' => ['name' => 'Afrikaans', 'native' => 'Afrikaans', 'direction' => 'ltr', 'flag' => '🇿🇦'],
+            'sq' => ['name' => 'Albanian', 'native' => 'Shqip', 'direction' => 'ltr', 'flag' => '🇦🇱'],
+            'hy' => ['name' => 'Armenian', 'native' => 'Հայերեն', 'direction' => 'ltr', 'flag' => '🇦🇲'],
+            'eu' => ['name' => 'Basque', 'native' => 'Euskera', 'direction' => 'ltr', 'flag' => '🇪🇸'],
+            'be' => ['name' => 'Belarusian', 'native' => 'Беларуская', 'direction' => 'ltr', 'flag' => '🇧🇾'],
+            'bn' => ['name' => 'Bengali', 'native' => 'বাংলা', 'direction' => 'ltr', 'flag' => '🇧🇩'],
+            'bs' => ['name' => 'Bosnian', 'native' => 'Bosanski', 'direction' => 'ltr', 'flag' => '🇧🇦'],
+            'ca' => ['name' => 'Catalan', 'native' => 'Català', 'direction' => 'ltr', 'flag' => '🇪🇸'],
+            'et' => ['name' => 'Estonian', 'native' => 'Eesti', 'direction' => 'ltr', 'flag' => '🇪🇪'],
+            'gl' => ['name' => 'Galician', 'native' => 'Galego', 'direction' => 'ltr', 'flag' => '🇪🇸'],
+            'ka' => ['name' => 'Georgian', 'native' => 'ქართული', 'direction' => 'ltr', 'flag' => '🇬🇪'],
+            'el' => ['name' => 'Greek', 'native' => 'Ελληνικά', 'direction' => 'ltr', 'flag' => '🇬🇷'],
+            'is' => ['name' => 'Icelandic', 'native' => 'Íslenska', 'direction' => 'ltr', 'flag' => '🇮🇸'],
+            'ga' => ['name' => 'Irish', 'native' => 'Gaeilge', 'direction' => 'ltr', 'flag' => '🇮🇪'],
+            'kk' => ['name' => 'Kazakh', 'native' => 'Қазақша', 'direction' => 'ltr', 'flag' => '🇰🇿'],
+            'lv' => ['name' => 'Latvian', 'native' => 'Latviešu', 'direction' => 'ltr', 'flag' => '🇱🇻'],
+            'lt' => ['name' => 'Lithuanian', 'native' => 'Lietuvių', 'direction' => 'ltr', 'flag' => '🇱🇹'],
+            'mk' => ['name' => 'Macedonian', 'native' => 'Македонски', 'direction' => 'ltr', 'flag' => '🇲🇰'],
+            'mn' => ['name' => 'Mongolian', 'native' => 'Монгол', 'direction' => 'ltr', 'flag' => '🇲🇳'],
+            'ne' => ['name' => 'Nepali', 'native' => 'नेपाली', 'direction' => 'ltr', 'flag' => '🇳🇵'],
+            'sr' => ['name' => 'Serbian', 'native' => 'Српски', 'direction' => 'ltr', 'flag' => '🇷🇸'],
+            'si' => ['name' => 'Sinhala', 'native' => 'සිංහල', 'direction' => 'ltr', 'flag' => '🇱🇰'],
+            'ta' => ['name' => 'Tamil', 'native' => 'தமிழ்', 'direction' => 'ltr', 'flag' => '🇱🇰'],
+            'te' => ['name' => 'Telugu', 'native' => 'తెలుగు', 'direction' => 'ltr', 'flag' => '🇮🇳'],
+            'uk' => ['name' => 'Ukrainian', 'native' => 'Українська', 'direction' => 'ltr', 'flag' => '🇺🇦'],
+            'uz' => ['name' => 'Uzbek', 'native' => 'Oʻzbekcha', 'direction' => 'ltr', 'flag' => '🇺🇿']
+        ],
+        'fallback_locale' => 'en',
+        'default_locale' => 'en',
+        'auto_detect' => true,
+        'url_prefix' => true,
+        'cache_translations' => true,
+        'translation_sources' => ['database', 'files', 'api']
     ];
-
-    /**
-     * Translation cache
-     */
-    private array $translationCache = [];
-
-    /**
-     * Loaded translation files
-     */
-    private array $loadedTranslations = [];
-
-    /**
-     * Number formatting rules
-     */
-    private array $numberFormats = [];
-
-    /**
-     * Date/time formatting rules
-     */
-    private array $dateFormats = [];
-
-    /**
-     * Currency formatting rules
-     */
-    private array $currencyFormats = [];
 
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(array $config = [])
     {
-        $this->initializeLocale();
-        $this->loadConfiguration();
+        $this->config = array_merge($this->localeConfig, $config);
+        $this->supportedLocales = $this->config['supported_locales'];
+        $this->fallbackLocale = $this->config['fallback_locale'];
+        $this->currentLocale = $this->detectLocale();
+
+        $this->initializePluralRules();
+        $this->initializeDateFormats();
+        $this->initializeNumberFormats();
+        $this->initializeCurrencyFormats();
         $this->loadTranslations();
     }
 
     /**
-     * Initialize locale settings
+     * Detect user locale
      */
-    private function initializeLocale(): void
+    private function detectLocale(): string
     {
-        // Detect user's preferred language
-        $this->detectUserLanguage();
+        // Check URL prefix first
+        if ($this->config['url_prefix']) {
+            $urlLocale = $this->getLocaleFromUrl();
+            if ($urlLocale && isset($this->supportedLocales[$urlLocale])) {
+                return $urlLocale;
+            }
+        }
 
-        // Set PHP locale
-        $this->setLocale();
+        // Check user session/cookie
+        $sessionLocale = $this->getLocaleFromSession();
+        if ($sessionLocale && isset($this->supportedLocales[$sessionLocale])) {
+            return $sessionLocale;
+        }
 
-        // Configure number and date formatting
-        $this->configureFormatting();
+        // Auto-detect from browser
+        if ($this->config['auto_detect']) {
+            $browserLocale = $this->getLocaleFromBrowser();
+            if ($browserLocale && isset($this->supportedLocales[$browserLocale])) {
+                return $browserLocale;
+            }
+        }
+
+        // Return default
+        return $this->config['default_locale'];
     }
 
     /**
-     * Detect user's preferred language
+     * Get locale from URL
      */
-    private function detectUserLanguage(): void
+    private function getLocaleFromUrl(): ?string
     {
-        // Check URL parameter
-        if (isset($_GET['lang']) && $this->isLanguageAvailable($_GET['lang'])) {
-            $this->currentLanguage = $_GET['lang'];
-            $this->setLanguageCookie($this->currentLanguage);
-            return;
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        $pathParts = explode('/', trim($requestUri, '/'));
+
+        if (!empty($pathParts[0]) && strlen($pathParts[0]) <= 5) {
+            return $pathParts[0];
         }
 
-        // Check session
-        if (isset($_SESSION['language']) && $this->isLanguageAvailable($_SESSION['language'])) {
-            $this->currentLanguage = $_SESSION['language'];
-            return;
-        }
-
-        // Check cookie
-        if (isset($_COOKIE['tpt_language']) && $this->isLanguageAvailable($_COOKIE['tpt_language'])) {
-            $this->currentLanguage = $_COOKIE['tpt_language'];
-            return;
-        }
-
-        // Check browser Accept-Language header
-        $this->detectBrowserLanguage();
-
-        // Store in session
-        $_SESSION['language'] = $this->currentLanguage;
+        return null;
     }
 
     /**
-     * Detect browser's preferred language
+     * Get locale from session
      */
-    private function detectBrowserLanguage(): void
+    private function getLocaleFromSession(): ?string
     {
-        if (!isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
-            return;
+        return $_SESSION['locale'] ?? $_COOKIE['locale'] ?? null;
+    }
+
+    /**
+     * Get locale from browser Accept-Language header
+     */
+    private function getLocaleFromBrowser(): ?string
+    {
+        $acceptLanguage = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '';
+
+        if (empty($acceptLanguage)) {
+            return null;
         }
 
-        $acceptLanguage = $_SERVER['HTTP_ACCEPT_LANGUAGE'];
+        // Parse Accept-Language header
         $languages = explode(',', $acceptLanguage);
 
         foreach ($languages as $language) {
-            $langCode = trim(explode(';', $language)[0]);
-            $primaryCode = explode('-', $langCode)[0];
+            $locale = trim(explode(';', $language)[0]);
 
-            if ($this->isLanguageAvailable($langCode)) {
-                $this->currentLanguage = $langCode;
-                return;
+            // Check exact match
+            if (isset($this->supportedLocales[$locale])) {
+                return $locale;
             }
 
-            if ($this->isLanguageAvailable($primaryCode)) {
-                $this->currentLanguage = $primaryCode;
-                return;
+            // Check language prefix (e.g., 'en' for 'en-US')
+            $languagePrefix = explode('-', $locale)[0];
+            if (isset($this->supportedLocales[$languagePrefix])) {
+                return $languagePrefix;
             }
         }
+
+        return null;
     }
 
     /**
-     * Set PHP locale
+     * Initialize plural rules for different languages
      */
-    private function setLocale(): void
+    private function initializePluralRules(): void
     {
-        $localeMap = [
-            'en' => 'en_US.UTF-8',
-            'es' => 'es_ES.UTF-8',
-            'fr' => 'fr_FR.UTF-8',
-            'de' => 'de_DE.UTF-8',
-            'zh' => 'zh_CN.UTF-8',
-            'ar' => 'ar_SA.UTF-8',
-            'hi' => 'hi_IN.UTF-8',
-            'pt' => 'pt_BR.UTF-8',
-            'ru' => 'ru_RU.UTF-8',
-            'ja' => 'ja_JP.UTF-8',
-            'ko' => 'ko_KR.UTF-8'
+        $this->pluralRules = [
+            'en' => function($n) {
+                return $n === 1 ? 'one' : 'other';
+            },
+            'es' => function($n) {
+                return $n === 1 ? 'one' : 'other';
+            },
+            'fr' => function($n) {
+                return $n === 1 ? 'one' : 'other';
+            },
+            'de' => function($n) {
+                return $n === 1 ? 'one' : 'other';
+            },
+            'ru' => function($n) {
+                if ($n % 10 === 1 && $n % 100 !== 11) return 'one';
+                if ($n % 10 >= 2 && $n % 10 <= 4 && ($n % 100 < 10 || $n % 100 >= 20)) return 'few';
+                return 'many';
+            },
+            'ar' => function($n) {
+                if ($n === 0) return 'zero';
+                if ($n === 1) return 'one';
+                if ($n === 2) return 'two';
+                if ($n % 100 >= 3 && $n % 100 <= 10) return 'few';
+                if ($n % 100 >= 11 && $n % 100 <= 99) return 'many';
+                return 'other';
+            },
+            'zh' => function($n) {
+                return 'other';
+            },
+            'ja' => function($n) {
+                return 'other';
+            },
+            'ko' => function($n) {
+                return 'other';
+            }
         ];
-
-        $locale = $localeMap[$this->currentLanguage] ?? $localeMap[$this->fallbackLanguage];
-
-        if (function_exists('setlocale')) {
-            setlocale(LC_ALL, $locale);
-        }
-
-        if (function_exists('putenv')) {
-            putenv("LC_ALL=$locale");
-        }
     }
 
     /**
-     * Configure number, date, and currency formatting
+     * Initialize date formats for different locales
      */
-    private function configureFormatting(): void
+    private function initializeDateFormats(): void
     {
-        // Number formatting rules
+        $this->dateFormats = [
+            'en' => ['short' => 'M/d/Y', 'medium' => 'M d, Y', 'long' => 'F d, Y', 'full' => 'l, F d, Y'],
+            'es' => ['short' => 'd/m/Y', 'medium' => 'd M Y', 'long' => 'd F Y', 'full' => 'l d F Y'],
+            'fr' => ['short' => 'd/m/Y', 'medium' => 'd M Y', 'long' => 'd F Y', 'full' => 'l d F Y'],
+            'de' => ['short' => 'd.m.Y', 'medium' => 'd.m.Y', 'long' => 'd. F Y', 'full' => 'l, d. F Y'],
+            'ja' => ['short' => 'Y/m/d', 'medium' => 'Y年m月d日', 'long' => 'Y年m月d日', 'full' => 'Y年m月d日 (D)'],
+            'zh' => ['short' => 'Y/m/d', 'medium' => 'Y年m月d日', 'long' => 'Y年m月d日', 'full' => 'Y年m月d日 D'],
+            'ar' => ['short' => 'd/m/Y', 'medium' => 'd M Y', 'long' => 'd F Y', 'full' => 'l، d F Y'],
+            'hi' => ['short' => 'd/m/Y', 'medium' => 'd M Y', 'long' => 'd F Y', 'full' => 'd F Y, l']
+        ];
+    }
+
+    /**
+     * Initialize number formats for different locales
+     */
+    private function initializeNumberFormats(): void
+    {
         $this->numberFormats = [
             'en' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2],
-            'de' => ['decimal' => ',', 'thousands' => '.', 'precision' => 2],
-            'fr' => ['decimal' => ',', 'thousands' => ' ', 'precision' => 2],
             'es' => ['decimal' => ',', 'thousands' => '.', 'precision' => 2],
-            'ar' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2],
-            'zh' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2],
+            'fr' => ['decimal' => ',', 'thousands' => ' ', 'precision' => 2],
+            'de' => ['decimal' => ',', 'thousands' => '.', 'precision' => 2],
             'ja' => ['decimal' => '.', 'thousands' => ',', 'precision' => 0],
-            'hi' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2]
+            'zh' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2],
+            'ar' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2],
+            'hi' => ['decimal' => '.', 'thousands' => ',', 'precision' => 2],
+            'pt-BR' => ['decimal' => ',', 'thousands' => '.', 'precision' => 2]
         ];
+    }
 
-        // Date formatting rules
-        $this->dateFormats = [
-            'en' => ['date' => 'm/d/Y', 'time' => 'g:i A', 'datetime' => 'm/d/Y g:i A'],
-            'de' => ['date' => 'd.m.Y', 'time' => 'H:i', 'datetime' => 'd.m.Y H:i'],
-            'fr' => ['date' => 'd/m/Y', 'time' => 'H:i', 'datetime' => 'd/m/Y H:i'],
-            'es' => ['date' => 'd/m/Y', 'time' => 'H:i', 'datetime' => 'd/m/Y H:i'],
-            'ar' => ['date' => 'd/m/Y', 'time' => 'H:i', 'datetime' => 'd/m/Y H:i'],
-            'zh' => ['date' => 'Y-m-d', 'time' => 'H:i', 'datetime' => 'Y-m-d H:i'],
-            'ja' => ['date' => 'Y/m/d', 'time' => 'H:i', 'datetime' => 'Y/m/d H:i'],
-            'hi' => ['date' => 'd/m/Y', 'time' => 'H:i', 'datetime' => 'd/m/Y H:i']
-        ];
-
-        // Currency formatting rules
+    /**
+     * Initialize currency formats for different locales
+     */
+    private function initializeCurrencyFormats(): void
+    {
         $this->currencyFormats = [
             'en' => ['symbol' => '$', 'position' => 'before', 'code' => 'USD'],
-            'de' => ['symbol' => '€', 'position' => 'after', 'code' => 'EUR'],
-            'fr' => ['symbol' => '€', 'position' => 'after', 'code' => 'EUR'],
             'es' => ['symbol' => '€', 'position' => 'before', 'code' => 'EUR'],
-            'ar' => ['symbol' => 'ر.س', 'position' => 'before', 'code' => 'SAR'],
-            'zh' => ['symbol' => '¥', 'position' => 'before', 'code' => 'CNY'],
+            'fr' => ['symbol' => '€', 'position' => 'before', 'code' => 'EUR'],
+            'de' => ['symbol' => '€', 'position' => 'before', 'code' => 'EUR'],
             'ja' => ['symbol' => '¥', 'position' => 'before', 'code' => 'JPY'],
-            'hi' => ['symbol' => '₹', 'position' => 'before', 'code' => 'INR']
+            'zh' => ['symbol' => '¥', 'position' => 'before', 'code' => 'CNY'],
+            'ar' => ['symbol' => 'ر.س', 'position' => 'before', 'code' => 'SAR'],
+            'hi' => ['symbol' => '₹', 'position' => 'before', 'code' => 'INR'],
+            'pt-BR' => ['symbol' => 'R$', 'position' => 'before', 'code' => 'BRL']
         ];
     }
 
     /**
-     * Load configuration
-     */
-    private function loadConfiguration(): void
-    {
-        $configFile = CONFIG_PATH . '/i18n.php';
-        if (file_exists($configFile)) {
-            $config = require $configFile;
-            $this->fallbackLanguage = $config['fallback_language'] ?? 'en';
-
-            if (isset($config['available_languages'])) {
-                $this->availableLanguages = array_merge($this->availableLanguages, $config['available_languages']);
-            }
-        }
-    }
-
-    /**
-     * Load translation files
+     * Load translations for current locale
      */
     private function loadTranslations(): void
     {
-        $langDir = RESOURCES_PATH . '/lang';
+        $this->translations = [];
 
-        // Load current language translations
-        $this->loadLanguageFile($langDir, $this->currentLanguage);
-
-        // Load fallback language if different
-        if ($this->currentLanguage !== $this->fallbackLanguage) {
-            $this->loadLanguageFile($langDir, $this->fallbackLanguage);
+        // Load from different sources
+        foreach ($this->config['translation_sources'] as $source) {
+            switch ($source) {
+                case 'database':
+                    $this->loadTranslationsFromDatabase();
+                    break;
+                case 'files':
+                    $this->loadTranslationsFromFiles();
+                    break;
+                case 'api':
+                    $this->loadTranslationsFromApi();
+                    break;
+            }
         }
     }
 
     /**
-     * Load language file
+     * Load translations from database
      */
-    private function loadLanguageFile(string $langDir, string $language): void
+    private function loadTranslationsFromDatabase(): void
     {
-        $langFile = $langDir . '/' . $language . '.php';
+        // This would load translations from database
+        // For now, we'll use placeholder data
+        $this->translations = array_merge($this->translations, [
+            'welcome' => 'Welcome',
+            'login' => 'Login',
+            'logout' => 'Logout',
+            'dashboard' => 'Dashboard',
+            'settings' => 'Settings'
+        ]);
+    }
 
-        if (file_exists($langFile)) {
-            $translations = require $langFile;
-            $this->loadedTranslations[$language] = $translations;
+    /**
+     * Load translations from files
+     */
+    private function loadTranslationsFromFiles(): void
+    {
+        $translationFile = __DIR__ . "/../../translations/{$this->currentLocale}.php";
+
+        if (file_exists($translationFile)) {
+            $fileTranslations = include $translationFile;
+            $this->translations = array_merge($this->translations, $fileTranslations);
         }
+    }
+
+    /**
+     * Load translations from API
+     */
+    private function loadTranslationsFromApi(): void
+    {
+        // This would load translations from external API
+        // For now, we'll skip this
+    }
+
+    /**
+     * Get current locale
+     */
+    public function getCurrentLocale(): string
+    {
+        return $this->currentLocale;
+    }
+
+    /**
+     * Set current locale
+     */
+    public function setLocale(string $locale): bool
+    {
+        if (!isset($this->supportedLocales[$locale])) {
+            return false;
+        }
+
+        $this->currentLocale = $locale;
+
+        // Save to session
+        $_SESSION['locale'] = $locale;
+
+        // Reload translations
+        $this->loadTranslations();
+
+        return true;
+    }
+
+    /**
+     * Get supported locales
+     */
+    public function getSupportedLocales(): array
+    {
+        return $this->supportedLocales;
+    }
+
+    /**
+     * Check if locale is RTL
+     */
+    public function isRtl(string $locale = null): bool
+    {
+        $locale = $locale ?? $this->currentLocale;
+        return isset($this->supportedLocales[$locale]) &&
+               $this->supportedLocales[$locale]['direction'] === 'rtl';
     }
 
     /**
      * Translate a key
      */
-    public function translate(string $key, array $parameters = [], string $domain = 'messages'): string
+    public function translate(string $key, array $params = [], string $locale = null): string
     {
-        // Check cache first
-        $cacheKey = $this->currentLanguage . '.' . $domain . '.' . $key;
-        if (isset($this->translationCache[$cacheKey])) {
-            return $this->replaceParameters($this->translationCache[$cacheKey], $parameters);
+        $locale = $locale ?? $this->currentLocale;
+
+        // Try current locale first
+        if (isset($this->translations[$locale][$key])) {
+            $translation = $this->translations[$locale][$key];
+        }
+        // Try fallback locale
+        elseif (isset($this->translations[$this->fallbackLocale][$key])) {
+            $translation = $this->translations[$this->fallbackLocale][$key];
+        }
+        // Return key if not found
+        else {
+            $translation = $key;
         }
 
-        // Find translation
-        $translation = $this->findTranslation($key, $domain);
-
-        // Cache the result
-        $this->translationCache[$cacheKey] = $translation;
-
-        return $this->replaceParameters($translation, $parameters);
+        // Replace parameters
+        return $this->replaceParameters($translation, $params);
     }
 
     /**
-     * Find translation for a key
+     * Translate with pluralization
      */
-    private function findTranslation(string $key, string $domain): string
+    public function translatePlural(string $key, int $count, array $params = [], string $locale = null): string
     {
-        // Check current language
-        if (isset($this->loadedTranslations[$this->currentLanguage][$domain][$key])) {
-            return $this->loadedTranslations[$this->currentLanguage][$domain][$key];
+        $locale = $locale ?? $this->currentLocale;
+
+        // Get plural form
+        $pluralForm = $this->getPluralForm($count, $locale);
+
+        // Try to find pluralized key
+        $pluralKey = $key . '.' . $pluralForm;
+
+        if (isset($this->translations[$locale][$pluralKey])) {
+            $translation = $this->translations[$locale][$pluralKey];
+        } elseif (isset($this->translations[$this->fallbackLocale][$pluralKey])) {
+            $translation = $this->translations[$this->fallbackLocale][$pluralKey];
+        } else {
+            // Fall back to singular/plural
+            $translation = $count === 1 ? $this->translate($key . '.one', $params, $locale) :
+                                         $this->translate($key . '.other', $params, $locale);
         }
 
-        // Check fallback language
-        if ($this->currentLanguage !== $this->fallbackLanguage &&
-            isset($this->loadedTranslations[$this->fallbackLanguage][$domain][$key])) {
-            return $this->loadedTranslations[$this->fallbackLanguage][$domain][$key];
+        // Replace count parameter
+        $params['count'] = $count;
+
+        return $this->replaceParameters($translation, $params);
+    }
+
+    /**
+     * Get plural form for locale
+     */
+    private function getPluralForm(int $count, string $locale): string
+    {
+        if (isset($this->pluralRules[$locale])) {
+            return $this->pluralRules[$locale]($count);
         }
 
-        // Return key if no translation found
-        return $key;
+        // Default to English plural rules
+        return $this->pluralRules['en']($count);
     }
 
     /**
      * Replace parameters in translation
      */
-    private function replaceParameters(string $translation, array $parameters): string
+    private function replaceParameters(string $translation, array $params): string
     {
-        foreach ($parameters as $key => $value) {
-            $translation = str_replace(':' . $key, $value, $translation);
-            $translation = str_replace('{' . $key . '}', $value, $translation);
+        foreach ($params as $key => $value) {
+            $translation = str_replace(":{$key}", $value, $translation);
+            $translation = str_replace("%{$key}%", $value, $translation);
         }
 
         return $translation;
     }
 
     /**
+     * Format date according to locale
+     */
+    public function formatDate(DateTime $date, string $format = 'medium', string $locale = null): string
+    {
+        $locale = $locale ?? $this->currentLocale;
+
+        if (!isset($this->dateFormats[$locale])) {
+            $locale = $this->fallbackLocale;
+        }
+
+        $formatString = $this->dateFormats[$locale][$format] ?? $this->dateFormats[$locale]['medium'];
+
+        return $date->format($formatString);
+    }
+
+    /**
      * Format number according to locale
      */
-    public function formatNumber(float $number, int $decimals = null): string
+    public function formatNumber(float $number, int $decimals = null, string $locale = null): string
     {
-        $format = $this->numberFormats[$this->currentLanguage] ?? $this->numberFormats['en'];
+        $locale = $locale ?? $this->currentLocale;
 
-        if ($decimals === null) {
-            $decimals = $format['precision'];
+        if (!isset($this->numberFormats[$locale])) {
+            $locale = $this->fallbackLocale;
         }
+
+        $format = $this->numberFormats[$locale];
+        $decimals = $decimals ?? $format['precision'];
 
         return number_format(
             $number,
@@ -383,205 +539,125 @@ class Internationalization
     /**
      * Format currency according to locale
      */
-    public function formatCurrency(float $amount, string $currency = null): string
+    public function formatCurrency(float $amount, string $currency = null, string $locale = null): string
     {
-        $format = $this->currencyFormats[$this->currentLanguage] ?? $this->currencyFormats['en'];
+        $locale = $locale ?? $this->currentLocale;
 
-        if ($currency === null) {
-            $currency = $format['code'];
+        if (!isset($this->currencyFormats[$locale])) {
+            $locale = $this->fallbackLocale;
         }
 
-        $formattedAmount = $this->formatNumber($amount, 2);
-        $symbol = $format['symbol'];
+        $currencyFormat = $this->currencyFormats[$locale];
+        $currency = $currency ?? $currencyFormat['code'];
 
-        if ($format['position'] === 'before') {
-            return $symbol . $formattedAmount;
+        $formattedAmount = $this->formatNumber($amount, 2, $locale);
+
+        if ($currencyFormat['position'] === 'before') {
+            return $currencyFormat['symbol'] . $formattedAmount;
         } else {
-            return $formattedAmount . ' ' . $symbol;
+            return $formattedAmount . ' ' . $currencyFormat['symbol'];
         }
     }
 
     /**
-     * Format date according to locale
+     * Get locale information
      */
-    public function formatDate(\DateTime $date, string $format = 'date'): string
+    public function getLocaleInfo(string $locale = null): array
     {
-        $dateFormats = $this->dateFormats[$this->currentLanguage] ?? $this->dateFormats['en'];
-        $formatString = $dateFormats[$format] ?? $dateFormats['date'];
+        $locale = $locale ?? $this->currentLocale;
 
-        return $date->format($formatString);
-    }
-
-    /**
-     * Get localized month names
-     */
-    public function getMonthNames(): array
-    {
-        $months = [];
-        for ($i = 1; $i <= 12; $i++) {
-            $date = \DateTime::createFromFormat('m', $i);
-            $months[] = $date->format('F'); // Full month name
+        if (!isset($this->supportedLocales[$locale])) {
+            return [];
         }
 
-        return $months;
-    }
-
-    /**
-     * Get localized day names
-     */
-    public function getDayNames(): array
-    {
-        $days = [];
-        for ($i = 0; $i < 7; $i++) {
-            $date = new \DateTime('next Monday +' . $i . ' days');
-            $days[] = $date->format('l'); // Full day name
-        }
-
-        return $days;
-    }
-
-    /**
-     * Set current language
-     */
-    public function setLanguage(string $language): bool
-    {
-        if (!$this->isLanguageAvailable($language)) {
-            return false;
-        }
-
-        $this->currentLanguage = $language;
-        $_SESSION['language'] = $language;
-        $this->setLanguageCookie($language);
-
-        // Reload translations
-        $this->loadTranslations();
-
-        // Clear translation cache
-        $this->translationCache = [];
-
-        return true;
-    }
-
-    /**
-     * Get current language
-     */
-    public function getCurrentLanguage(): string
-    {
-        return $this->currentLanguage;
-    }
-
-    /**
-     * Get available languages
-     */
-    public function getAvailableLanguages(): array
-    {
-        return $this->availableLanguages;
-    }
-
-    /**
-     * Check if language is available
-     */
-    public function isLanguageAvailable(string $language): bool
-    {
-        return isset($this->availableLanguages[$language]);
-    }
-
-    /**
-     * Check if current language is RTL
-     */
-    public function isRTL(): bool
-    {
-        return $this->availableLanguages[$this->currentLanguage]['rtl'] ?? false;
-    }
-
-    /**
-     * Get language info
-     */
-    public function getLanguageInfo(string $language = null): ?array
-    {
-        $lang = $language ?? $this->currentLanguage;
-        return $this->availableLanguages[$lang] ?? null;
-    }
-
-    /**
-     * Set language cookie
-     */
-    private function setLanguageCookie(string $language): void
-    {
-        setcookie('tpt_language', $language, time() + (365 * 24 * 60 * 60), '/'); // 1 year
+        return $this->supportedLocales[$locale];
     }
 
     /**
      * Add translation
      */
-    public function addTranslation(string $key, string $translation, string $domain = 'messages'): void
+    public function addTranslation(string $key, string $translation, string $locale = null): void
     {
-        if (!isset($this->loadedTranslations[$this->currentLanguage][$domain])) {
-            $this->loadedTranslations[$this->currentLanguage][$domain] = [];
+        $locale = $locale ?? $this->currentLocale;
+
+        if (!isset($this->translations[$locale])) {
+            $this->translations[$locale] = [];
         }
 
-        $this->loadedTranslations[$this->currentLanguage][$domain][$key] = $translation;
-
-        // Clear cache for this key
-        $cacheKey = $this->currentLanguage . '.' . $domain . '.' . $key;
-        unset($this->translationCache[$cacheKey]);
+        $this->translations[$locale][$key] = $translation;
     }
 
     /**
-     * Load translations from database
+     * Add multiple translations
      */
-    public function loadDatabaseTranslations(): void
+    public function addTranslations(array $translations, string $locale = null): void
     {
-        // Implementation for loading translations from database
-        // This would integrate with a translations table
+        $locale = $locale ?? $this->currentLocale;
+
+        if (!isset($this->translations[$locale])) {
+            $this->translations[$locale] = [];
+        }
+
+        $this->translations[$locale] = array_merge($this->translations[$locale], $translations);
     }
 
     /**
-     * Export translations to file
+     * Get all translations for a locale
      */
-    public function exportTranslations(string $language, string $domain = 'messages'): bool
+    public function getTranslations(string $locale = null): array
     {
-        if (!isset($this->loadedTranslations[$language][$domain])) {
-            return false;
-        }
-
-        $translations = $this->loadedTranslations[$language][$domain];
-        $exportPath = RESOURCES_PATH . '/lang/' . $language . '_' . $domain . '_export.php';
-
-        $content = "<?php\n\nreturn " . var_export($translations, true) . ";\n";
-
-        return file_put_contents($exportPath, $content) !== false;
+        $locale = $locale ?? $this->currentLocale;
+        return $this->translations[$locale] ?? [];
     }
 
     /**
-     * Import translations from file
+     * Export translations
      */
-    public function importTranslations(string $filePath, string $language, string $domain = 'messages'): bool
+    public function exportTranslations(string $locale = null, string $format = 'php'): string
     {
-        if (!file_exists($filePath)) {
-            return false;
+        $locale = $locale ?? $this->currentLocale;
+        $translations = $this->getTranslations($locale);
+
+        switch ($format) {
+            case 'php':
+                return "<?php\nreturn " . var_export($translations, true) . ";\n";
+            case 'json':
+                return json_encode($translations, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            case 'yaml':
+                // Would require YAML extension
+                return yaml_emit($translations);
+            default:
+                return serialize($translations);
+        }
+    }
+
+    /**
+     * Import translations
+     */
+    public function importTranslations(string $data, string $format = 'php', string $locale = null): bool
+    {
+        $locale = $locale ?? $this->currentLocale;
+
+        switch ($format) {
+            case 'php':
+                $translations = include 'data:text/plain;base64,' . base64_encode($data);
+                break;
+            case 'json':
+                $translations = json_decode($data, true);
+                break;
+            case 'yaml':
+                $translations = yaml_parse($data);
+                break;
+            default:
+                $translations = unserialize($data);
         }
 
-        $translations = require $filePath;
-
-        if (!is_array($translations)) {
-            return false;
+        if (is_array($translations)) {
+            $this->addTranslations($translations, $locale);
+            return true;
         }
 
-        if (!isset($this->loadedTranslations[$language])) {
-            $this->loadedTranslations[$language] = [];
-        }
-
-        if (!isset($this->loadedTranslations[$language][$domain])) {
-            $this->loadedTranslations[$language][$domain] = [];
-        }
-
-        $this->loadedTranslations[$language][$domain] = array_merge(
-            $this->loadedTranslations[$language][$domain],
-            $translations
-        );
-
-        return true;
+        return false;
     }
 
     /**
@@ -589,44 +665,58 @@ class Internationalization
      */
     public function getTranslationStats(): array
     {
-        $stats = [
-            'current_language' => $this->currentLanguage,
-            'fallback_language' => $this->fallbackLanguage,
-            'available_languages' => count($this->availableLanguages),
-            'loaded_languages' => count($this->loadedTranslations),
-            'cache_size' => count($this->translationCache)
-        ];
+        $stats = [];
 
-        // Count translations per domain
-        $stats['translations_per_domain'] = [];
-        foreach ($this->loadedTranslations as $lang => $domains) {
-            foreach ($domains as $domain => $translations) {
-                if (!isset($stats['translations_per_domain'][$domain])) {
-                    $stats['translations_per_domain'][$domain] = [];
-                }
-                $stats['translations_per_domain'][$domain][$lang] = count($translations);
-            }
+        foreach ($this->supportedLocales as $locale => $info) {
+            $translationCount = isset($this->translations[$locale]) ? count($this->translations[$locale]) : 0;
+            $completionRate = $this->calculateCompletionRate($locale);
+
+            $stats[$locale] = [
+                'name' => $info['name'],
+                'native' => $info['native'],
+                'direction' => $info['direction'],
+                'flag' => $info['flag'],
+                'translations' => $translationCount,
+                'completion_rate' => $completionRate
+            ];
         }
 
         return $stats;
     }
 
     /**
-     * Clear translation cache
+     * Calculate completion rate for a locale
      */
-    public function clearCache(): void
+    private function calculateCompletionRate(string $locale): float
     {
-        $this->translationCache = [];
+        if (!isset($this->translations[$locale]) || empty($this->translations[$this->fallbackLocale])) {
+            return 0.0;
+        }
+
+        $fallbackTranslations = $this->translations[$this->fallbackLocale];
+        $localeTranslations = $this->translations[$locale];
+
+        $translatedKeys = array_intersect_key($localeTranslations, $fallbackTranslations);
+        $totalKeys = count($fallbackTranslations);
+
+        return $totalKeys > 0 ? (count($translatedKeys) / $totalKeys) * 100 : 0.0;
     }
 
     /**
-     * Get RTL languages
+     * Get missing translations
      */
-    public function getRTLLanguages(): array
+    public function getMissingTranslations(string $locale = null): array
     {
-        return array_filter($this->availableLanguages, function($lang) {
-            return $lang['rtl'] === true;
-        });
+        $locale = $locale ?? $this->currentLocale;
+
+        if (!isset($this->translations[$locale]) || !isset($this->translations[$this->fallbackLocale])) {
+            return [];
+        }
+
+        $fallbackTranslations = $this->translations[$this->fallbackLocale];
+        $localeTranslations = $this->translations[$locale];
+
+        return array_diff_key($fallbackTranslations, $localeTranslations);
     }
 
     /**
@@ -634,97 +724,144 @@ class Internationalization
      */
     public function validateTranslationKey(string $key): bool
     {
-        // Basic validation - can be extended
-        return !empty($key) && !preg_match('/[^a-zA-Z0-9_\.]/', $key);
+        // Check for valid key format
+        return preg_match('/^[a-zA-Z][a-zA-Z0-9_.-]*$/', $key) === 1;
     }
 
     /**
-     * Get missing translations
+     * Get locale from IP address (geolocation)
      */
-    public function getMissingTranslations(string $language, string $domain = 'messages'): array
+    public function getLocaleFromIp(string $ipAddress): ?string
     {
-        if (!isset($this->loadedTranslations[$this->fallbackLanguage][$domain])) {
+        // This would integrate with a geolocation service
+        // For now, return null
+        return null;
+    }
+
+    /**
+     * Generate URL with locale prefix
+     */
+    public function generateLocalizedUrl(string $path, string $locale = null): string
+    {
+        $locale = $locale ?? $this->currentLocale;
+
+        if (!$this->config['url_prefix'] || $locale === $this->fallbackLocale) {
+            return $path;
+        }
+
+        // Remove leading slash from path if present
+        $path = ltrim($path, '/');
+
+        return "/{$locale}/{$path}";
+    }
+
+    /**
+     * Parse localized URL
+     */
+    public function parseLocalizedUrl(string $url): array
+    {
+        $pathParts = explode('/', trim($url, '/'));
+        $locale = $pathParts[0] ?? '';
+
+        if (isset($this->supportedLocales[$locale])) {
+            $remainingPath = '/' . implode('/', array_slice($pathParts, 1));
+            return [
+                'locale' => $locale,
+                'path' => $remainingPath
+            ];
+        }
+
+        return [
+            'locale' => $this->fallbackLocale,
+            'path' => $url
+        ];
+    }
+
+    /**
+     * Get browser language preferences
+     */
+    public function getBrowserLanguages(): array
+    {
+        $acceptLanguage = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '';
+
+        if (empty($acceptLanguage)) {
             return [];
         }
 
-        $fallbackTranslations = $this->loadedTranslations[$this->fallbackLanguage][$domain];
-        $currentTranslations = $this->loadedTranslations[$language][$domain] ?? [];
+        $languages = [];
+        $languageList = explode(',', $acceptLanguage);
 
-        return array_diff_key($fallbackTranslations, $currentTranslations);
+        foreach ($languageList as $language) {
+            $parts = explode(';', $language);
+            $locale = trim($parts[0]);
+            $quality = isset($parts[1]) ? (float) str_replace('q=', '', $parts[1]) : 1.0;
+
+            $languages[] = [
+                'locale' => $locale,
+                'quality' => $quality,
+                'supported' => isset($this->supportedLocales[$locale])
+            ];
+        }
+
+        // Sort by quality
+        usort($languages, function($a, $b) {
+            return $b['quality'] <=> $a['quality'];
+        });
+
+        return $languages;
     }
 
     /**
-     * Pluralize text
+     * Clear translation cache
      */
-    public function pluralize(string $singular, string $plural, int $count): string
+    public function clearCache(): void
     {
-        $key = $count === 1 ? $singular : $plural;
-        return $this->translate($key, ['count' => $count]);
+        $this->translations = [];
+        $this->loadTranslations();
     }
 
     /**
-     * Get locale-specific date/time formats
+     * Get system locale information
      */
-    public function getDateTimeFormats(): array
+    public function getSystemLocaleInfo(): array
     {
-        return $this->dateFormats[$this->currentLanguage] ?? $this->dateFormats['en'];
-    }
-
-    /**
-     * Format relative time
-     */
-    public function formatRelativeTime(\DateTime $date): string
-    {
-        $now = new \DateTime();
-        $diff = $now->diff($date);
-
-        if ($diff->days === 0) {
-            if ($diff->h === 0) {
-                if ($diff->i === 0) {
-                    return $this->translate('just_now');
-                }
-                return $this->pluralize('minute_ago', 'minutes_ago', $diff->i);
-            }
-            return $this->pluralize('hour_ago', 'hours_ago', $diff->h);
-        }
-
-        if ($diff->days < 7) {
-            return $this->pluralize('day_ago', 'days_ago', $diff->days);
-        }
-
-        if ($diff->days < 30) {
-            $weeks = floor($diff->days / 7);
-            return $this->pluralize('week_ago', 'weeks_ago', $weeks);
-        }
-
-        if ($diff->days < 365) {
-            $months = floor($diff->days / 30);
-            return $this->pluralize('month_ago', 'months_ago', $months);
-        }
-
-        $years = floor($diff->days / 365);
-        return $this->pluralize('year_ago', 'years_ago', $years);
+        return [
+            'current_locale' => $this->currentLocale,
+            'fallback_locale' => $this->fallbackLocale,
+            'supported_locales_count' => count($this->supportedLocales),
+            'rtl_locales' => array_filter($this->supportedLocales, function($locale) {
+                return $locale['direction'] === 'rtl';
+            }),
+            'translation_sources' => $this->config['translation_sources'],
+            'cache_enabled' => $this->config['cache_translations'],
+            'url_prefix_enabled' => $this->config['url_prefix'],
+            'auto_detect_enabled' => $this->config['auto_detect']
+        ];
     }
 }
 
-// Helper functions for global use
-if (!function_exists('__')) {
-    function __(string $key, array $parameters = [], string $domain = 'messages'): string {
-        $i18n = new \Core\Internationalization();
-        return $i18n->translate($key, $parameters, $domain);
-    }
+// Helper functions for template usage
+function __($key, $params = [], $locale = null) {
+    global $i18n;
+    return $i18n->translate($key, $params, $locale);
 }
 
-if (!function_exists('_n')) {
-    function _n(string $singular, string $plural, int $count): string {
-        $i18n = new \Core\Internationalization();
-        return $i18n->pluralize($singular, $plural, $count);
-    }
+function _n($key, $count, $params = [], $locale = null) {
+    global $i18n;
+    return $i18n->translatePlural($key, $count, $params, $locale);
 }
 
-if (!function_exists('_x')) {
-    function _x(string $key, string $context, array $parameters = []): string {
-        $i18n = new \Core\Internationalization();
-        return $i18n->translate($key, $parameters, $context);
-    }
+function _d($date, $format = 'medium', $locale = null) {
+    global $i18n;
+    return $i18n->formatDate($date, $format, $locale);
+}
+
+function _n($number, $decimals = null, $locale = null) {
+    global $i18n;
+    return $i18n->formatNumber($number, $decimals, $locale);
+}
+
+function _c($amount, $currency = null, $locale = null) {
+    global $i18n;
+    return $i18n->formatCurrency($amount, $currency, $locale);
 }

@@ -2,72 +2,117 @@
 /**
  * TPT Government Platform - API Marketplace Manager
  *
- * Comprehensive API marketplace for government services
- * enabling third-party integrations, developer ecosystem, and API management
+ * Comprehensive API marketplace supporting service discovery, API management,
+ * monetization, developer portal, and third-party integrations
  */
-
-namespace Core;
 
 class APIMarketplaceManager
 {
-    /**
-     * API catalog
-     */
-    private array $apiCatalog = [];
+    private array $config;
+    private array $apis;
+    private array $developers;
+    private array $applications;
+    private array $subscriptions;
+    private array $transactions;
+    private APIGateway $apiGateway;
+    private DeveloperPortal $developerPortal;
+    private MonetizationEngine $monetizationEngine;
+    private AnalyticsEngine $analyticsEngine;
 
     /**
-     * API subscriptions
+     * API Marketplace configuration
      */
-    private array $apiSubscriptions = [];
-
-    /**
-     * API keys and authentication
-     */
-    private array $apiKeys = [];
-
-    /**
-     * API usage analytics
-     */
-    private array $apiAnalytics = [];
-
-    /**
-     * Rate limiting configurations
-     */
-    private array $rateLimits = [];
-
-    /**
-     * API documentation
-     */
-    private array $apiDocumentation = [];
-
-    /**
-     * Developer portal
-     */
-    private array $developerPortal = [];
-
-    /**
-     * API monetization
-     */
-    private array $apiMonetization = [];
-
-    /**
-     * Webhook management
-     */
-    private array $webhooks = [];
-
-    /**
-     * API testing tools
-     */
-    private array $apiTesting = [];
+    private array $marketplaceConfig = [
+        'api_management' => [
+            'enabled' => true,
+            'versioning' => true,
+            'rate_limiting' => true,
+            'caching' => true,
+            'documentation' => true,
+            'testing' => true
+        ],
+        'developer_portal' => [
+            'enabled' => true,
+            'registration' => true,
+            'api_explorer' => true,
+            'documentation' => true,
+            'support' => true,
+            'analytics' => true
+        ],
+        'monetization' => [
+            'enabled' => true,
+            'pricing_models' => [
+                'free',
+                'freemium',
+                'pay_per_use',
+                'subscription',
+                'tiered'
+            ],
+            'payment_gateways' => ['stripe', 'paypal', 'crypto'],
+            'revenue_sharing' => true,
+            'commission_rates' => [
+                'default' => 0.20, // 20%
+                'premium' => 0.15,  // 15%
+                'enterprise' => 0.10 // 10%
+            ]
+        ],
+        'api_discovery' => [
+            'enabled' => true,
+            'categories' => [
+                'government_services',
+                'data_analytics',
+                'identity_verification',
+                'payment_processing',
+                'communication',
+                'infrastructure'
+            ],
+            'search' => true,
+            'recommendations' => true,
+            'popularity_ranking' => true
+        ],
+        'security' => [
+            'oauth2' => true,
+            'api_keys' => true,
+            'jwt_tokens' => true,
+            'rate_limiting' => true,
+            'ip_whitelisting' => true,
+            'audit_logging' => true
+        ],
+        'analytics' => [
+            'enabled' => true,
+            'usage_tracking' => true,
+            'performance_monitoring' => true,
+            'error_tracking' => true,
+            'revenue_analytics' => true
+        ],
+        'third_party_integrations' => [
+            'enabled' => true,
+            'webhooks' => true,
+            'zapier' => true,
+            'slack' => true,
+            'microsoft_teams' => true,
+            'google_workspace' => true
+        ]
+    ];
 
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(array $config = [])
     {
+        $this->config = array_merge($this->marketplaceConfig, $config);
+        $this->apis = [];
+        $this->developers = [];
+        $this->applications = [];
+        $this->subscriptions = [];
+        $this->transactions = [];
+
+        $this->apiGateway = new APIGateway();
+        $this->developerPortal = new DeveloperPortal();
+        $this->monetizationEngine = new MonetizationEngine();
+        $this->analyticsEngine = new AnalyticsEngine();
+
         $this->initializeMarketplace();
-        $this->loadConfigurations();
-        $this->setupAPIs();
     }
 
     /**
@@ -75,187 +120,51 @@ class APIMarketplaceManager
      */
     private function initializeMarketplace(): void
     {
-        // Initialize core marketplace components
-        $this->initializeAPICatalog();
-        $this->initializeRateLimits();
-        $this->initializeDeveloperPortal();
-        $this->initializeMonetization();
-        $this->initializeWebhooks();
-        $this->initializeTestingTools();
+        // Initialize API management
+        if ($this->config['api_management']['enabled']) {
+            $this->initializeAPIManagement();
+        }
+
+        // Initialize developer portal
+        if ($this->config['developer_portal']['enabled']) {
+            $this->initializeDeveloperPortal();
+        }
+
+        // Initialize monetization
+        if ($this->config['monetization']['enabled']) {
+            $this->initializeMonetization();
+        }
+
+        // Initialize API discovery
+        if ($this->config['api_discovery']['enabled']) {
+            $this->initializeAPIDiscovery();
+        }
+
+        // Initialize security
+        if ($this->config['security']['enabled']) {
+            $this->initializeSecurity();
+        }
+
+        // Start marketplace monitoring
+        $this->startMarketplaceMonitoring();
     }
 
     /**
-     * Initialize API catalog
+     * Initialize API management
      */
-    private function initializeAPICatalog(): void
+    private function initializeAPIManagement(): void
     {
-        $this->apiCatalog = [
-            'citizen_services' => [
-                'name' => 'Citizen Services API',
-                'description' => 'Access to citizen registration, documents, and services',
-                'version' => 'v2.1',
-                'base_url' => '/api/v2/citizen',
-                'endpoints' => [
-                    'register' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'documents' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'services' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'notifications' => ['method' => 'POST', 'auth' => 'api_key']
-                ],
-                'category' => 'citizen_services',
-                'pricing' => ['free' => 1000, 'basic' => 10000, 'premium' => 100000],
-                'rate_limit' => ['requests_per_hour' => 1000],
-                'status' => 'active'
-            ],
-            'business_services' => [
-                'name' => 'Business Services API',
-                'description' => 'Business registration, licensing, and compliance APIs',
-                'version' => 'v2.0',
-                'base_url' => '/api/v2/business',
-                'endpoints' => [
-                    'register' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'licenses' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'compliance' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'payments' => ['method' => 'POST', 'auth' => 'api_key']
-                ],
-                'category' => 'business_services',
-                'pricing' => ['free' => 500, 'basic' => 5000, 'premium' => 50000],
-                'rate_limit' => ['requests_per_hour' => 500],
-                'status' => 'active'
-            ],
-            'property_services' => [
-                'name' => 'Property Services API',
-                'description' => 'Property registration, valuation, and transaction APIs',
-                'version' => 'v1.8',
-                'base_url' => '/api/v1/property',
-                'endpoints' => [
-                    'search' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'valuation' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'transactions' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'documents' => ['method' => 'GET', 'auth' => 'api_key']
-                ],
-                'category' => 'property_services',
-                'pricing' => ['free' => 200, 'basic' => 2000, 'premium' => 20000],
-                'rate_limit' => ['requests_per_hour' => 200],
-                'status' => 'active'
-            ],
-            'health_services' => [
-                'name' => 'Health Services API',
-                'description' => 'Healthcare provider directory and appointment APIs',
-                'version' => 'v1.5',
-                'base_url' => '/api/v1/health',
-                'endpoints' => [
-                    'providers' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'appointments' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'records' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'insurance' => ['method' => 'GET', 'auth' => 'api_key']
-                ],
-                'category' => 'health_services',
-                'pricing' => ['free' => 100, 'basic' => 1000, 'premium' => 10000],
-                'rate_limit' => ['requests_per_hour' => 100],
-                'status' => 'active'
-            ],
-            'education_services' => [
-                'name' => 'Education Services API',
-                'description' => 'School information, enrollment, and academic APIs',
-                'version' => 'v1.3',
-                'base_url' => '/api/v1/education',
-                'endpoints' => [
-                    'schools' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'enrollment' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'grades' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'certificates' => ['method' => 'GET', 'auth' => 'api_key']
-                ],
-                'category' => 'education_services',
-                'pricing' => ['free' => 300, 'basic' => 3000, 'premium' => 30000],
-                'rate_limit' => ['requests_per_hour' => 300],
-                'status' => 'active'
-            ],
-            'transport_services' => [
-                'name' => 'Transport Services API',
-                'description' => 'Public transport, traffic, and mobility APIs',
-                'version' => 'v2.2',
-                'base_url' => '/api/v2/transport',
-                'endpoints' => [
-                    'routes' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'realtime' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'tickets' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'parking' => ['method' => 'GET', 'auth' => 'api_key']
-                ],
-                'category' => 'transport_services',
-                'pricing' => ['free' => 1000, 'basic' => 10000, 'premium' => 100000],
-                'rate_limit' => ['requests_per_hour' => 1000],
-                'status' => 'active'
-            ],
-            'environmental_services' => [
-                'name' => 'Environmental Services API',
-                'description' => 'Environmental monitoring and permit APIs',
-                'version' => 'v1.7',
-                'base_url' => '/api/v1/environment',
-                'endpoints' => [
-                    'monitoring' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'permits' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'reports' => ['method' => 'GET', 'auth' => 'api_key'],
-                    'alerts' => ['method' => 'GET', 'auth' => 'api_key']
-                ],
-                'category' => 'environmental_services',
-                'pricing' => ['free' => 150, 'basic' => 1500, 'premium' => 15000],
-                'rate_limit' => ['requests_per_hour' => 150],
-                'status' => 'active'
-            ],
-            'financial_services' => [
-                'name' => 'Financial Services API',
-                'description' => 'Tax information, payments, and financial APIs',
-                'version' => 'v2.0',
-                'base_url' => '/api/v2/financial',
-                'endpoints' => [
-                    'tax_info' => ['method' => 'GET', 'auth' => 'oauth2'],
-                    'payments' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'refunds' => ['method' => 'POST', 'auth' => 'oauth2'],
-                    'statements' => ['method' => 'GET', 'auth' => 'oauth2']
-                ],
-                'category' => 'financial_services',
-                'pricing' => ['free' => 50, 'basic' => 500, 'premium' => 5000],
-                'rate_limit' => ['requests_per_hour' => 50],
-                'status' => 'active'
-            ]
-        ];
-    }
+        // Set up API versioning
+        $this->setupAPIVersioning();
 
-    /**
-     * Initialize rate limiting
-     */
-    private function initializeRateLimits(): void
-    {
-        $this->rateLimits = [
-            'free_tier' => [
-                'requests_per_minute' => 60,
-                'requests_per_hour' => 1000,
-                'requests_per_day' => 10000,
-                'burst_limit' => 10,
-                'throttle_delay' => 1
-            ],
-            'basic_tier' => [
-                'requests_per_minute' => 300,
-                'requests_per_hour' => 5000,
-                'requests_per_day' => 50000,
-                'burst_limit' => 50,
-                'throttle_delay' => 0.5
-            ],
-            'premium_tier' => [
-                'requests_per_minute' => 1000,
-                'requests_per_hour' => 50000,
-                'requests_per_day' => 500000,
-                'burst_limit' => 200,
-                'throttle_delay' => 0.1
-            ],
-            'enterprise_tier' => [
-                'requests_per_minute' => 10000,
-                'requests_per_hour' => 500000,
-                'requests_per_day' => 5000000,
-                'burst_limit' => 1000,
-                'throttle_delay' => 0.01
-            ]
-        ];
+        // Configure rate limiting
+        $this->setupRateLimiting();
+
+        // Initialize API caching
+        $this->setupAPICaching();
+
+        // Set up API documentation
+        $this->setupAPIDocumentation();
     }
 
     /**
@@ -263,32 +172,17 @@ class APIMarketplaceManager
      */
     private function initializeDeveloperPortal(): void
     {
-        $this->developerPortal = [
-            'features' => [
-                'api_documentation' => true,
-                'interactive_console' => true,
-                'code_examples' => true,
-                'sdk_downloads' => true,
-                'webhook_testing' => true,
-                'rate_limit_monitoring' => true,
-                'usage_analytics' => true,
-                'support_ticket_system' => true
-            ],
-            'resources' => [
-                'getting_started' => '/docs/getting-started',
-                'api_reference' => '/docs/api-reference',
-                'code_samples' => '/docs/code-samples',
-                'best_practices' => '/docs/best-practices',
-                'changelog' => '/docs/changelog',
-                'status_page' => '/status'
-            ],
-            'support' => [
-                'email' => 'api-support@govt-platform.tpt',
-                'slack' => 'tpt-gov-api-support',
-                'forum' => '/community/forum',
-                'documentation' => '/docs/support'
-            ]
-        ];
+        // Set up developer registration
+        $this->setupDeveloperRegistration();
+
+        // Initialize API explorer
+        $this->setupAPIExplorer();
+
+        // Configure documentation system
+        $this->setupDocumentationSystem();
+
+        // Set up support system
+        $this->setupSupportSystem();
     }
 
     /**
@@ -296,473 +190,632 @@ class APIMarketplaceManager
      */
     private function initializeMonetization(): void
     {
-        $this->apiMonetization = [
-            'pricing_models' => [
-                'free' => [
-                    'requests_per_month' => 1000,
-                    'features' => ['basic_endpoints', 'community_support'],
-                    'price' => 0
-                ],
-                'basic' => [
-                    'requests_per_month' => 10000,
-                    'features' => ['all_endpoints', 'email_support', 'basic_analytics'],
-                    'price' => 49.99
-                ],
-                'premium' => [
-                    'requests_per_month' => 100000,
-                    'features' => ['all_endpoints', 'priority_support', 'advanced_analytics', 'custom_limits'],
-                    'price' => 199.99
-                ],
-                'enterprise' => [
-                    'requests_per_month' => 1000000,
-                    'features' => ['all_endpoints', 'dedicated_support', 'custom_features', 'sla_guarantee'],
-                    'price' => 999.99
-                ]
-            ],
-            'billing' => [
-                'currency' => 'USD',
-                'billing_cycle' => 'monthly',
-                'payment_methods' => ['credit_card', 'bank_transfer', 'paypal'],
-                'tax_rate' => 0.08,
-                'grace_period' => 7 // days
-            ],
-            'revenue_sharing' => [
-                'platform_fee' => 0.05, // 5%
-                'developer_share' => 0.95, // 95%
-                'minimum_payout' => 50.00,
-                'payout_cycle' => 'monthly'
-            ]
-        ];
+        // Set up pricing models
+        $this->setupPricingModels();
+
+        // Configure payment gateways
+        $this->setupPaymentGateways();
+
+        // Initialize revenue sharing
+        $this->setupRevenueSharing();
+
+        // Set up billing system
+        $this->setupBillingSystem();
     }
 
     /**
-     * Initialize webhooks
+     * Initialize API discovery
      */
-    private function initializeWebhooks(): void
+    private function initializeAPIDiscovery(): void
     {
-        $this->webhooks = [
-            'supported_events' => [
-                'citizen_registered' => 'Triggered when a new citizen registers',
-                'application_submitted' => 'Triggered when an application is submitted',
-                'payment_received' => 'Triggered when a payment is received',
-                'document_issued' => 'Triggered when a document is issued',
-                'status_changed' => 'Triggered when application status changes',
-                'license_renewed' => 'Triggered when a license is renewed',
-                'complaint_filed' => 'Triggered when a complaint is filed',
-                'appeal_submitted' => 'Triggered when an appeal is submitted'
-            ],
-            'security' => [
-                'signature_verification' => true,
-                'ip_whitelisting' => true,
-                'rate_limiting' => true,
-                'retry_policy' => ['max_attempts' => 3, 'backoff' => 'exponential']
-            ],
-            'delivery' => [
-                'guaranteed_delivery' => true,
-                'event_buffering' => true,
-                'dead_letter_queue' => true,
-                'monitoring' => true
-            ]
-        ];
+        // Set up API categories
+        $this->setupAPICategories();
+
+        // Configure search functionality
+        $this->setupAPISearch();
+
+        // Initialize recommendations
+        $this->setupAPIRecommendations();
+
+        // Set up popularity ranking
+        $this->setupPopularityRanking();
     }
 
     /**
-     * Initialize testing tools
+     * Initialize security
      */
-    private function initializeTestingTools(): void
+    private function initializeSecurity(): void
     {
-        $this->apiTesting = [
-            'sandbox_environment' => [
-                'url' => 'https://sandbox.api.govt-platform.tpt',
-                'features' => ['mock_data', 'error_simulation', 'rate_limit_testing'],
-                'data_retention' => 30 // days
-            ],
-            'testing_tools' => [
-                'postman_collection' => '/docs/postman-collection.json',
-                'openapi_spec' => '/docs/openapi.yaml',
-                'code_samples' => ['php', 'python', 'javascript', 'java', 'csharp'],
-                'mock_server' => '/tools/mock-server'
-            ],
-            'validation' => [
-                'request_validation' => true,
-                'response_validation' => true,
-                'schema_validation' => true,
-                'security_testing' => true
-            ]
-        ];
+        // Set up OAuth2
+        $this->setupOAuth2();
+
+        // Configure API keys
+        $this->setupAPIKeys();
+
+        // Initialize JWT tokens
+        $this->setupJWT();
+
+        // Set up audit logging
+        $this->setupAuditLogging();
     }
 
     /**
-     * Load marketplace configurations
+     * Start marketplace monitoring
      */
-    private function loadConfigurations(): void
+    private function startMarketplaceMonitoring(): void
     {
-        $configFile = CONFIG_PATH . '/api_marketplace.php';
-        if (file_exists($configFile)) {
-            $config = require $configFile;
+        // Start API monitoring
+        $this->startAPIMonitoring();
 
-            if (isset($config['catalog'])) {
-                $this->apiCatalog = array_merge($this->apiCatalog, $config['catalog']);
-            }
+        // Start developer monitoring
+        $this->startDeveloperMonitoring();
+
+        // Start revenue monitoring
+        $this->startRevenueMonitoring();
+    }
+
+    /**
+     * Register API
+     */
+    public function registerAPI(array $apiData): array
+    {
+        $api = [
+            'id' => uniqid('api_'),
+            'name' => $apiData['name'],
+            'description' => $apiData['description'],
+            'version' => $apiData['version'] ?? '1.0.0',
+            'base_url' => $apiData['base_url'],
+            'endpoints' => $apiData['endpoints'] ?? [],
+            'category' => $apiData['category'],
+            'provider_id' => $apiData['provider_id'],
+            'pricing_model' => $apiData['pricing_model'] ?? 'free',
+            'pricing' => $apiData['pricing'] ?? [],
+            'rate_limits' => $apiData['rate_limits'] ?? [],
+            'documentation' => $apiData['documentation'] ?? '',
+            'status' => 'pending_review',
+            'created_at' => time(),
+            'updated_at' => time()
+        ];
+
+        // Validate API data
+        $validation = $this->validateAPIData($api);
+        if (!$validation['valid']) {
+            return [
+                'success' => false,
+                'error' => 'Invalid API data',
+                'details' => $validation['errors']
+            ];
         }
-    }
 
-    /**
-     * Setup APIs
-     */
-    private function setupAPIs(): void
-    {
-        // In a real implementation, this would initialize API endpoints
-        // For now, we'll set up mock configurations
-        foreach ($this->apiCatalog as $apiId => $apiConfig) {
-            // Initialize API endpoint
-            $this->initializeAPIEndpoint($apiId, $apiConfig);
-        }
-    }
+        // Store API
+        $this->apis[$api['id']] = $api;
+        $this->storeAPI($api['id'], $api);
 
-    /**
-     * Generate API key
-     */
-    public function generateAPIKey(string $userId, array $permissions = []): array
-    {
-        $apiKey = $this->generateSecureAPIKey();
-        $keyId = $this->generateKeyId();
+        // Register with API gateway
+        $this->apiGateway->registerAPI($api);
 
-        $keyData = [
-            'id' => $keyId,
-            'user_id' => $userId,
-            'api_key' => $apiKey,
-            'permissions' => $permissions,
-            'created_at' => date('c'),
-            'last_used' => null,
-            'status' => 'active',
-            'rate_limit_tier' => 'free_tier',
-            'usage' => [
-                'requests_today' => 0,
-                'requests_this_month' => 0,
-                'last_request_at' => null
-            ]
-        ];
-
-        $this->apiKeys[$keyId] = $keyData;
+        // Notify administrators
+        $this->notifyAdministrators('api_registered', $api);
 
         return [
             'success' => true,
-            'key_id' => $keyId,
-            'api_key' => $apiKey,
-            'permissions' => $permissions,
-            'rate_limit_tier' => 'free_tier'
+            'api_id' => $api['id'],
+            'api' => $api
+        ];
+    }
+
+    /**
+     * Register developer
+     */
+    public function registerDeveloper(array $developerData): array
+    {
+        $developer = [
+            'id' => uniqid('dev_'),
+            'name' => $developerData['name'],
+            'email' => $developerData['email'],
+            'company' => $developerData['company'] ?? '',
+            'website' => $developerData['website'] ?? '',
+            'description' => $developerData['description'] ?? '',
+            'api_key' => $this->generateAPIKey(),
+            'status' => 'active',
+            'tier' => 'free',
+            'created_at' => time(),
+            'last_login' => time(),
+            'applications' => [],
+            'usage_stats' => []
+        ];
+
+        // Store developer
+        $this->developers[$developer['id']] = $developer;
+        $this->storeDeveloper($developer['id'], $developer);
+
+        // Send welcome email
+        $this->sendWelcomeEmail($developer);
+
+        return [
+            'success' => true,
+            'developer_id' => $developer['id'],
+            'api_key' => $developer['api_key'],
+            'developer' => $developer
+        ];
+    }
+
+    /**
+     * Create application
+     */
+    public function createApplication(string $developerId, array $appData): array
+    {
+        if (!isset($this->developers[$developerId])) {
+            return [
+                'success' => false,
+                'error' => 'Developer not found'
+            ];
+        }
+
+        $application = [
+            'id' => uniqid('app_'),
+            'developer_id' => $developerId,
+            'name' => $appData['name'],
+            'description' => $appData['description'] ?? '',
+            'redirect_uris' => $appData['redirect_uris'] ?? [],
+            'scopes' => $appData['scopes'] ?? [],
+            'client_id' => $this->generateClientId(),
+            'client_secret' => $this->generateClientSecret(),
+            'status' => 'active',
+            'created_at' => time(),
+            'subscriptions' => [],
+            'usage_stats' => []
+        ];
+
+        // Store application
+        $this->applications[$application['id']] = $application;
+        $this->storeApplication($application['id'], $application);
+
+        // Update developer
+        $this->developers[$developerId]['applications'][] = $application['id'];
+        $this->updateDeveloper($developerId, $this->developers[$developerId]);
+
+        return [
+            'success' => true,
+            'application_id' => $application['id'],
+            'client_id' => $application['client_id'],
+            'client_secret' => $application['client_secret'],
+            'application' => $application
         ];
     }
 
     /**
      * Subscribe to API
      */
-    public function subscribeToAPI(string $userId, string $apiId, string $plan = 'free'): array
+    public function subscribeToAPI(string $applicationId, string $apiId, string $planId = 'free'): array
     {
-        if (!isset($this->apiCatalog[$apiId])) {
+        if (!isset($this->applications[$applicationId])) {
+            return [
+                'success' => false,
+                'error' => 'Application not found'
+            ];
+        }
+
+        if (!isset($this->apis[$apiId])) {
             return [
                 'success' => false,
                 'error' => 'API not found'
             ];
         }
 
-        $subscriptionId = $this->generateSubscriptionId();
+        $application = $this->applications[$applicationId];
+        $api = $this->apis[$apiId];
+
+        // Check if already subscribed
+        if (isset($application['subscriptions'][$apiId])) {
+            return [
+                'success' => false,
+                'error' => 'Already subscribed to this API'
+            ];
+        }
 
         $subscription = [
-            'id' => $subscriptionId,
-            'user_id' => $userId,
+            'id' => uniqid('sub_'),
+            'application_id' => $applicationId,
             'api_id' => $apiId,
-            'plan' => $plan,
+            'plan_id' => $planId,
             'status' => 'active',
-            'created_at' => date('c'),
-            'activated_at' => date('c'),
-            'expires_at' => date('c', strtotime('+1 month')),
+            'created_at' => time(),
+            'last_used' => time(),
             'usage' => [
-                'requests_this_month' => 0,
-                'requests_limit' => $this->apiCatalog[$apiId]['pricing'][$plan] ?? 1000
+                'requests' => 0,
+                'data_transfer' => 0,
+                'errors' => 0
             ]
         ];
 
-        $this->apiSubscriptions[$subscriptionId] = $subscription;
+        // Store subscription
+        $this->subscriptions[$subscription['id']] = $subscription;
+        $this->storeSubscription($subscription['id'], $subscription);
+
+        // Update application
+        $application['subscriptions'][$apiId] = $subscription['id'];
+        $this->applications[$applicationId] = $application;
+        $this->updateApplication($applicationId, $application);
+
+        // Update API popularity
+        $this->updateAPIPopularity($apiId);
 
         return [
             'success' => true,
-            'subscription_id' => $subscriptionId,
-            'api_id' => $apiId,
-            'plan' => $plan,
-            'expires_at' => $subscription['expires_at']
+            'subscription_id' => $subscription['id'],
+            'subscription' => $subscription
         ];
     }
 
     /**
-     * Validate API request
+     * Call API
      */
-    public function validateAPIRequest(string $apiKey, string $endpoint, string $method): array
+    public function callAPI(string $apiId, string $endpoint, array $params = [], array $headers = []): array
     {
-        // Find API key
-        $keyData = null;
-        foreach ($this->apiKeys as $key) {
-            if ($key['api_key'] === $apiKey && $key['status'] === 'active') {
-                $keyData = $key;
-                break;
-            }
+        if (!isset($this->apis[$apiId])) {
+            return [
+                'success' => false,
+                'error' => 'API not found'
+            ];
         }
 
-        if (!$keyData) {
+        $api = $this->apis[$apiId];
+
+        // Check API status
+        if ($api['status'] !== 'published') {
             return [
-                'valid' => false,
-                'error' => 'Invalid API key'
+                'success' => false,
+                'error' => 'API is not available'
+            ];
+        }
+
+        // Validate request
+        $validation = $this->validateAPIRequest($apiId, $endpoint, $params, $headers);
+        if (!$validation['valid']) {
+            return [
+                'success' => false,
+                'error' => 'Invalid request',
+                'details' => $validation['errors']
             ];
         }
 
         // Check rate limits
-        $rateLimitCheck = $this->checkRateLimit($keyData);
+        $rateLimitCheck = $this->checkRateLimit($apiId, $headers);
         if (!$rateLimitCheck['allowed']) {
             return [
-                'valid' => false,
+                'success' => false,
                 'error' => 'Rate limit exceeded',
                 'retry_after' => $rateLimitCheck['retry_after']
             ];
         }
 
-        // Check permissions
-        $permissionCheck = $this->checkPermissions($keyData, $endpoint, $method);
-        if (!$permissionCheck['allowed']) {
-            return [
-                'valid' => false,
-                'error' => 'Insufficient permissions'
-            ];
-        }
+        // Route request through API gateway
+        $result = $this->apiGateway->routeRequest($api, $endpoint, $params, $headers);
 
-        // Check subscription
-        $subscriptionCheck = $this->checkSubscription($keyData['user_id'], $endpoint);
-        if (!$subscriptionCheck['allowed']) {
-            return [
-                'valid' => false,
-                'error' => 'No active subscription',
-                'subscription_required' => true
-            ];
-        }
+        // Record API call
+        $this->recordAPICall($apiId, $endpoint, $result, $headers);
 
-        // Update usage
-        $this->updateUsage($keyData['id']);
+        // Update usage statistics
+        $this->updateUsageStats($apiId, $headers, $result);
 
-        return [
-            'valid' => true,
-            'user_id' => $keyData['user_id'],
-            'key_id' => $keyData['id'],
-            'rate_limit_remaining' => $rateLimitCheck['remaining'],
-            'subscription_id' => $subscriptionCheck['subscription_id']
-        ];
+        return $result;
     }
 
     /**
-     * Get API documentation
+     * Search APIs
      */
-    public function getAPIDocumentation(string $apiId, string $format = 'json'): array
+    public function searchAPIs(array $filters = [], string $query = '', int $limit = 20): array
     {
-        if (!isset($this->apiCatalog[$apiId])) {
-            throw new \Exception("API not found: $apiId");
-        }
+        $results = [];
 
-        $api = $this->apiCatalog[$apiId];
+        foreach ($this->apis as $apiId => $api) {
+            // Check if API is published
+            if ($api['status'] !== 'published') {
+                continue;
+            }
 
-        $documentation = [
-            'api' => $api,
-            'endpoints' => [],
-            'authentication' => [
-                'type' => 'API Key',
-                'header' => 'X-API-Key',
-                'description' => 'Include your API key in the request header'
-            ],
-            'rate_limits' => $this->rateLimits[$api['rate_limit_tier'] ?? 'free_tier'],
-            'examples' => $this->generateAPIExamples($api),
-            'changelog' => $this->getAPIChangelog($apiId),
-            'support' => $this->developerPortal['support']
-        ];
+            // Apply filters
+            if (!empty($filters['category']) && $api['category'] !== $filters['category']) {
+                continue;
+            }
 
-        // Add endpoint documentation
-        foreach ($api['endpoints'] as $endpointName => $endpointConfig) {
-            $documentation['endpoints'][$endpointName] = [
-                'method' => $endpointConfig['method'],
-                'url' => $api['base_url'] . '/' . $endpointName,
-                'description' => $this->getEndpointDescription($endpointName),
-                'parameters' => $this->getEndpointParameters($endpointName),
-                'responses' => $this->getEndpointResponses($endpointName),
-                'examples' => $this->getEndpointExamples($endpointName)
+            if (!empty($filters['pricing_model']) && $api['pricing_model'] !== $filters['pricing_model']) {
+                continue;
+            }
+
+            // Search query
+            if (!empty($query)) {
+                $searchText = strtolower($api['name'] . ' ' . $api['description']);
+                if (strpos($searchText, strtolower($query)) === false) {
+                    continue;
+                }
+            }
+
+            $results[] = [
+                'id' => $apiId,
+                'name' => $api['name'],
+                'description' => $api['description'],
+                'category' => $api['category'],
+                'pricing_model' => $api['pricing_model'],
+                'popularity_score' => $this->getAPIPopularityScore($apiId),
+                'average_rating' => $this->getAPIAverageRating($apiId)
             ];
         }
 
-        return $documentation;
-    }
+        // Sort by popularity
+        usort($results, function($a, $b) {
+            return $b['popularity_score'] <=> $a['popularity_score'];
+        });
 
-    /**
-     * Register webhook
-     */
-    public function registerWebhook(string $userId, array $webhookConfig): array
-    {
-        $webhookId = $this->generateWebhookId();
-
-        $webhook = array_merge($webhookConfig, [
-            'id' => $webhookId,
-            'user_id' => $userId,
-            'created_at' => date('c'),
-            'status' => 'active',
-            'secret' => $this->generateWebhookSecret(),
-            'delivery_attempts' => 0,
-            'last_delivery' => null
-        ]);
-
-        $this->webhooks[$webhookId] = $webhook;
-
-        return [
-            'success' => true,
-            'webhook_id' => $webhookId,
-            'secret' => $webhook['secret'],
-            'url' => $webhookConfig['url']
-        ];
+        return array_slice($results, 0, $limit);
     }
 
     /**
      * Get API analytics
      */
-    public function getAPIAnalytics(string $userId = null, array $filters = []): array
+    public function getAPIAnalytics(string $apiId, array $dateRange = []): array
     {
-        $analytics = [
-            'overview' => [
-                'total_apis' => count($this->apiCatalog),
-                'active_subscriptions' => count($this->apiSubscriptions),
-                'total_api_keys' => count($this->apiKeys),
-                'total_requests_today' => rand(50000, 200000)
-            ],
-            'usage' => [],
-            'performance' => [],
-            'errors' => []
-        ];
-
-        // Filter by user if specified
-        if ($userId) {
-            $userKeys = array_filter($this->apiKeys, fn($key) => $key['user_id'] === $userId);
-            $userSubscriptions = array_filter($this->apiSubscriptions, fn($sub) => $sub['user_id'] === $userId);
-
-            $analytics['user'] = [
-                'api_keys' => count($userKeys),
-                'active_subscriptions' => count(array_filter($userSubscriptions, fn($sub) => $sub['status'] === 'active')),
-                'total_requests_this_month' => array_sum(array_column($userKeys, 'usage.requests_this_month'))
-            ];
-        }
-
-        // Add usage analytics
-        $analytics['usage'] = [
-            'requests_by_api' => $this->getRequestsByAPI($filters),
-            'requests_by_hour' => $this->getRequestsByHour($filters),
-            'top_endpoints' => $this->getTopEndpoints($filters),
-            'geographic_distribution' => $this->getGeographicDistribution($filters)
-        ];
-
-        // Add performance analytics
-        $analytics['performance'] = [
-            'average_response_time' => rand(150, 500), // ms
-            'uptime_percentage' => rand(995, 999) / 10, // %
-            'error_rate' => rand(1, 5) / 100, // %
-            'throughput' => rand(1000, 5000) // requests per minute
-        ];
-
-        return $analytics;
-    }
-
-    /**
-     * Test API endpoint
-     */
-    public function testAPIEndpoint(string $apiId, string $endpoint, array $parameters = []): array
-    {
-        if (!isset($this->apiCatalog[$apiId])) {
+        if (!isset($this->apis[$apiId])) {
             return [
                 'success' => false,
                 'error' => 'API not found'
             ];
         }
 
-        $api = $this->apiCatalog[$apiId];
-
-        if (!isset($api['endpoints'][$endpoint])) {
-            return [
-                'success' => false,
-                'error' => 'Endpoint not found'
-            ];
-        }
-
-        // Simulate API call
-        $result = $this->simulateAPICall($api, $endpoint, $parameters);
+        $analytics = $this->analyticsEngine->getAPIAnalytics($apiId, $dateRange);
 
         return [
             'success' => true,
-            'api_id' => $apiId,
-            'endpoint' => $endpoint,
-            'method' => $api['endpoints'][$endpoint]['method'],
-            'request' => [
-                'url' => $api['base_url'] . '/' . $endpoint,
-                'method' => $api['endpoints'][$endpoint]['method'],
-                'parameters' => $parameters
-            ],
-            'response' => $result,
-            'execution_time' => rand(50, 200), // ms
-            'status_code' => $result['status_code'] ?? 200
+            'analytics' => $analytics
         ];
     }
 
     /**
-     * Export API data
+     * Get developer analytics
      */
-    public function exportAPIData(string $format = 'json', array $filters = []): string
+    public function getDeveloperAnalytics(string $developerId, array $dateRange = []): array
     {
-        $exportData = [
-            'export_time' => date('c'),
-            'api_catalog' => $this->apiCatalog,
-            'subscriptions' => $this->apiSubscriptions,
-            'api_keys' => array_map(function($key) {
-                // Remove sensitive data
-                unset($key['api_key']);
-                return $key;
-            }, $this->apiKeys),
-            'analytics' => $this->getAPIAnalytics(null, $filters),
-            'webhooks' => $this->webhooks
-        ];
-
-        switch ($format) {
-            case 'json':
-                return json_encode($exportData, JSON_PRETTY_PRINT);
-            case 'xml':
-                return $this->exportToXML($exportData);
-            default:
-                throw new \Exception("Unsupported export format: $format");
+        if (!isset($this->developers[$developerId])) {
+            return [
+                'success' => false,
+                'error' => 'Developer not found'
+            ];
         }
+
+        $analytics = $this->analyticsEngine->getDeveloperAnalytics($developerId, $dateRange);
+
+        return [
+            'success' => true,
+            'analytics' => $analytics
+        ];
     }
 
     /**
-     * Placeholder methods (would be implemented with actual API logic)
+     * Process payment for API usage
      */
-    private function initializeAPIEndpoint(string $apiId, array $config): void {}
-    private function generateSecureAPIKey(): string { return 'tpt_' . bin2hex(random_bytes(16)); }
-    private function generateKeyId(): string { return 'key_' . uniqid(); }
-    private function generateSubscriptionId(): string { return 'sub_' . uniqid(); }
-    private function checkRateLimit(array $keyData): array { return ['allowed' => true, 'remaining' => rand(900, 1000), 'retry_after' => 0]; }
-    private function checkPermissions(array $keyData, string $endpoint, string $method): array { return ['allowed' => true]; }
-    private function checkSubscription(string $userId, string $endpoint): array { return ['allowed' => true, 'subscription_id' => 'sub_' . uniqid()]; }
-    private function updateUsage(string $keyId): void {}
-    private function generateAPIExamples(array $api): array { return []; }
-    private function getAPIChangelog(string $apiId): array { return []; }
-    private function getEndpointDescription(string $endpoint): string { return "Description for $endpoint"; }
-    private function getEndpointParameters(string $endpoint): array { return []; }
-    private function getEndpointResponses(string $endpoint): array { return []; }
-    private function getEndpointExamples(string $endpoint): array { return []; }
-    private function generateWebhookId(): string { return 'webhook_' . uniqid(); }
-    private function generateWebhookSecret(): string { return bin2hex(random_bytes(32)); }
-    private function getRequestsByAPI(array $filters): array { return []; }
-    private function getRequestsByHour(array $filters): array { return []; }
-    private function getTopEndpoints(array $filters): array { return []; }
-    private function getGeographicDistribution(array $filters): array { return []; }
-    private function simulateAPICall(array $api, string $endpoint, array $parameters): array { return ['status_code' => 200, 'data' => ['success' => true, 'message' => 'Mock API response']]; }
-    private function exportToXML(array $data): string { return '<?xml version="1.0"?><api_data></api_data>'; }
+    public function processPayment(string $subscriptionId, float $amount, string $currency = 'USD'): array
+    {
+        if (!isset($this->subscriptions[$subscriptionId])) {
+            return [
+                'success' => false,
+                'error' => 'Subscription not found'
+            ];
+        }
+
+        $subscription = $this->subscriptions[$subscriptionId];
+        $api = $this->apis[$subscription['api_id']];
+        $developer = $this->developers[$this->applications[$subscription['application_id']]['developer_id']];
+
+        // Calculate commission
+        $commissionRate = $this->config['monetization']['commission_rates']['default'];
+        $commission = $amount * $commissionRate;
+        $providerAmount = $amount - $commission;
+
+        // Process payment
+        $paymentResult = $this->monetizationEngine->processPayment([
+            'amount' => $amount,
+            'currency' => $currency,
+            'description' => "API usage payment for {$api['name']}",
+            'metadata' => [
+                'subscription_id' => $subscriptionId,
+                'api_id' => $subscription['api_id'],
+                'developer_id' => $developer['id']
+            ]
+        ]);
+
+        if ($paymentResult['success']) {
+            // Record transaction
+            $transaction = [
+                'id' => uniqid('txn_'),
+                'subscription_id' => $subscriptionId,
+                'amount' => $amount,
+                'currency' => $currency,
+                'commission' => $commission,
+                'provider_amount' => $providerAmount,
+                'status' => 'completed',
+                'created_at' => time()
+            ];
+
+            $this->transactions[] = $transaction;
+            $this->storeTransaction($transaction['id'], $transaction);
+
+            // Process revenue sharing
+            $this->processRevenueSharing($transaction, $api['provider_id']);
+        }
+
+        return $paymentResult;
+    }
+
+    /**
+     * Get marketplace statistics
+     */
+    public function getMarketplaceStats(): array
+    {
+        return [
+            'total_apis' => count(array_filter($this->apis, fn($api) => $api['status'] === 'published')),
+            'total_developers' => count($this->developers),
+            'total_applications' => count($this->applications),
+            'total_subscriptions' => count($this->subscriptions),
+            'total_transactions' => count($this->transactions),
+            'revenue_today' => $this->getRevenueForPeriod('today'),
+            'revenue_this_month' => $this->getRevenueForPeriod('month'),
+            'popular_categories' => $this->getPopularCategories(),
+            'api_usage_trends' => $this->getAPIUsageTrends()
+        ];
+    }
+
+    /**
+     * Create API documentation
+     */
+    public function createAPIDocumentation(string $apiId, array $documentationData): array
+    {
+        if (!isset($this->apis[$apiId])) {
+            return [
+                'success' => false,
+                'error' => 'API not found'
+            ];
+        }
+
+        $documentation = [
+            'api_id' => $apiId,
+            'title' => $documentationData['title'],
+            'content' => $documentationData['content'],
+            'examples' => $documentationData['examples'] ?? [],
+            'changelog' => $documentationData['changelog'] ?? [],
+            'last_updated' => time()
+        ];
+
+        // Store documentation
+        $this->storeAPIDocumentation($apiId, $documentation);
+
+        // Update API
+        $this->apis[$apiId]['documentation'] = $documentation;
+        $this->updateAPI($apiId, $this->apis[$apiId]);
+
+        return [
+            'success' => true,
+            'documentation' => $documentation
+        ];
+    }
+
+    /**
+     * Test API endpoint
+     */
+    public function testAPIEndpoint(string $apiId, string $endpoint, array $testData): array
+    {
+        if (!isset($this->apis[$apiId])) {
+            return [
+                'success' => false,
+                'error' => 'API not found'
+            ];
+        }
+
+        $api = $this->apis[$apiId];
+
+        // Run API test
+        $testResult = $this->apiGateway->testEndpoint($api, $endpoint, $testData);
+
+        // Record test result
+        $this->recordAPITest($apiId, $endpoint, $testData, $testResult);
+
+        return $testResult;
+    }
+
+    /**
+     * Generate API key
+     */
+    public function generateAPIKey(string $applicationId): array
+    {
+        if (!isset($this->applications[$applicationId])) {
+            return [
+                'success' => false,
+                'error' => 'Application not found'
+            ];
+        }
+
+        $apiKey = $this->generateAPIKey();
+
+        // Update application
+        $this->applications[$applicationId]['api_key'] = $apiKey;
+        $this->updateApplication($applicationId, $this->applications[$applicationId]);
+
+        return [
+            'success' => true,
+            'api_key' => $apiKey
+        ];
+    }
+
+    // Helper methods (implementations would be more complex in production)
+
+    private function validateAPIData(array $api): array {/* Implementation */}
+    private function storeAPI(string $apiId, array $api): void {/* Implementation */}
+    private function notifyAdministrators(string $event, array $data): void {/* Implementation */}
+    private function setupAPIVersioning(): void {/* Implementation */}
+    private function setupRateLimiting(): void {/* Implementation */}
+    private function setupAPICaching(): void {/* Implementation */}
+    private function setupAPIDocumentation(): void {/* Implementation */}
+    private function setupDeveloperRegistration(): void {/* Implementation */}
+    private function setupAPIExplorer(): void {/* Implementation */}
+    private function setupDocumentationSystem(): void {/* Implementation */}
+    private function setupSupportSystem(): void {/* Implementation */}
+    private function setupPricingModels(): void {/* Implementation */}
+    private function setupPaymentGateways(): void {/* Implementation */}
+    private function setupRevenueSharing(): void {/* Implementation */}
+    private function setupBillingSystem(): void {/* Implementation */}
+    private function setupAPICategories(): void {/* Implementation */}
+    private function setupAPISearch(): void {/* Implementation */}
+    private function setupAPIRecommendations(): void {/* Implementation */}
+    private function setupPopularityRanking(): void {/* Implementation */}
+    private function setupOAuth2(): void {/* Implementation */}
+    private function setupAPIKeys(): void {/* Implementation */}
+    private function setupJWT(): void {/* Implementation */}
+    private function setupAuditLogging(): void {/* Implementation */}
+    private function startAPIMonitoring(): void {/* Implementation */}
+    private function startDeveloperMonitoring(): void {/* Implementation */}
+    private function startRevenueMonitoring(): void {/* Implementation */}
+    private function storeDeveloper(string $developerId, array $developer): void {/* Implementation */}
+    private function sendWelcomeEmail(array $developer): void {/* Implementation */}
+    private function storeApplication(string $applicationId, array $application): void {/* Implementation */}
+    private function updateDeveloper(string $developerId, array $developer): void {/* Implementation */}
+    private function generateClientId(): string {/* Implementation */}
+    private function generateClientSecret(): string {/* Implementation */}
+    private function storeSubscription(string $subscriptionId, array $subscription): void {/* Implementation */}
+    private function updateApplication(string $applicationId, array $application): void {/* Implementation */}
+    private function updateAPIPopularity(string $apiId): void {/* Implementation */}
+    private function validateAPIRequest(string $apiId, string $endpoint, array $params, array $headers): array {/* Implementation */}
+    private function checkRateLimit(string $apiId, array $headers): array {/* Implementation */}
+    private function recordAPICall(string $apiId, string $endpoint, array $result, array $headers): void {/* Implementation */}
+    private function updateUsageStats(string $apiId, array $headers, array $result): void {/* Implementation */}
+    private function getAPIPopularityScore(string $apiId): float {/* Implementation */}
+    private function getAPIAverageRating(string $apiId): float {/* Implementation */}
+    private function storeTransaction(string $transactionId, array $transaction): void {/* Implementation */}
+    private function processRevenueSharing(array $transaction, string $providerId): void {/* Implementation */}
+    private function getRevenueForPeriod(string $period): float {/* Implementation */}
+    private function getPopularCategories(): array {/* Implementation */}
+    private function getAPIUsageTrends(): array {/* Implementation */}
+    private function storeAPIDocumentation(string $apiId, array $documentation): void {/* Implementation */}
+    private function updateAPI(string $apiId, array $api): void {/* Implementation */}
+    private function recordAPITest(string $apiId, string $endpoint, array $testData, array $result): void {/* Implementation */}
+    private function generateAPIKey(): string {/* Implementation */}
+}
+
+// Placeholder classes for dependencies
+class APIGateway {
+    public function registerAPI(array $api): void {/* Implementation */}
+    public function routeRequest(array $api, string $endpoint, array $params, array $headers): array {/* Implementation */}
+    public function testEndpoint(array $api, string $endpoint, array $testData): array {/* Implementation */}
+}
+
+class DeveloperPortal {
+    // Developer portal implementation
+}
+
+class MonetizationEngine {
+    public function processPayment(array $paymentData): array {/* Implementation */}
+}
+
+class AnalyticsEngine {
+    public function getAPIAnalytics(string $apiId, array $dateRange): array {/* Implementation */}
+    public function getDeveloperAnalytics(string $developerId, array $dateRange): array {/* Implementation */}
 }

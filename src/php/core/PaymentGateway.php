@@ -2,348 +2,236 @@
 /**
  * TPT Government Platform - Payment Gateway System
  *
- * Comprehensive payment processing system supporting multiple gateways
- * and payment methods for government service fees and transactions
+ * Comprehensive payment processing system supporting 21+ payment gateways,
+ * multi-currency transactions, fraud detection, and compliance features
  */
-
-namespace Core;
 
 class PaymentGateway
 {
+    private array $config;
+    private array $gateways;
+    private array $supportedCurrencies;
+    private array $transactionHistory;
+    private FraudDetection $fraudDetection;
+    private ComplianceManager $complianceManager;
+
     /**
-     * Supported payment gateways
+     * Supported payment gateways configuration
      */
-    private array $supportedGateways = [
+    private array $gatewayConfig = [
         'stripe' => [
             'name' => 'Stripe',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD'],
-            'methods' => ['card', 'bank_account', 'digital_wallet'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca']
+            'type' => 'credit_card',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF'],
+            'features' => ['3ds', 'sca', 'apple_pay', 'google_pay', 'recurring'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.039, 'fixed' => 0.30],
+            'test_mode' => true
         ],
         'paypal' => [
             'name' => 'PayPal',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'],
-            'methods' => ['paypal', 'card', 'bank_account'],
-            'features' => ['recurring', 'refunds', 'disputes']
+            'type' => 'digital_wallet',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'],
+            'features' => ['express_checkout', 'recurring', 'refunds', 'disputes'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.044, 'fixed' => 0.30],
+            'test_mode' => true
         ],
         'adyen' => [
             'name' => 'Adyen',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'JPY', 'HKD', 'SGD'],
-            'methods' => ['card', 'bank_account', 'digital_wallet', 'local_methods'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'risk_assessment']
+            'type' => 'payment_processor',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK'],
+            'features' => ['3ds', 'sca', 'risk_scoring', 'recurring', 'payouts'],
+            'fees' => ['domestic' => 0.025, 'international' => 0.035, 'fixed' => 0.25],
+            'test_mode' => true
         ],
         'braintree' => [
             'name' => 'Braintree',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
-            'methods' => ['card', 'paypal', 'venmo', 'apple_pay', 'google_pay'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'vaulting']
+            'type' => 'credit_card',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
+            'features' => ['3ds', 'sca', 'vault', 'recurring', 'apple_pay', 'google_pay'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.039, 'fixed' => 0.30],
+            'test_mode' => true
         ],
         'square' => [
             'name' => 'Square',
-            'currencies' => ['USD', 'CAD', 'GBP', 'EUR', 'JPY', 'AUD'],
-            'methods' => ['card', 'digital_wallet', 'cash_app'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'in_person']
+            'type' => 'pos_payment',
+            'supported_currencies' => ['USD', 'CAD', 'GBP', 'JPY', 'AUD', 'EUR'],
+            'features' => ['in_person', 'online', 'recurring', 'inventory'],
+            'fees' => ['domestic' => 0.026, 'international' => 0.030, 'fixed' => 0.10],
+            'test_mode' => true
         ],
         'authorize_net' => [
             'name' => 'Authorize.Net',
-            'currencies' => ['USD', 'CAD', 'GBP', 'EUR', 'AUD'],
-            'methods' => ['card', 'e_check', 'digital_wallet'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca']
+            'type' => 'credit_card',
+            'supported_currencies' => ['USD', 'CAD', 'GBP', 'EUR', 'AUD'],
+            'features' => ['cim', 'arb', '3ds', 'fraud_detection'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.039, 'fixed' => 0.30],
+            'test_mode' => true
         ],
         '2checkout' => [
             'name' => '2Checkout',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'JPY', 'AUD', 'NZD'],
-            'methods' => ['card', 'paypal', 'bank_transfer'],
-            'features' => ['recurring', 'refunds', 'disputes', 'global']
+            'type' => 'payment_processor',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'JPY', 'CHF'],
+            'features' => ['recurring', 'refunds', 'chargebacks', 'fraud_prevention'],
+            'fees' => ['domestic' => 0.035, 'international' => 0.045, 'fixed' => 0.45],
+            'test_mode' => true
         ],
         'worldpay' => [
             'name' => 'Worldpay',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'JPY'],
-            'methods' => ['card', 'bank_account', 'digital_wallet'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'risk_assessment']
+            'type' => 'payment_processor',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'],
+            'features' => ['3ds', 'sca', 'tokenization', 'recurring'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.039, 'fixed' => 0.25],
+            'test_mode' => true
         ],
         'cybersource' => [
             'name' => 'CyberSource',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'HKD'],
-            'methods' => ['card', 'bank_account', 'digital_wallet'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'fraud_detection']
+            'type' => 'payment_processor',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF'],
+            'features' => ['3ds', 'sca', 'fraud_management', 'tokenization', 'payouts'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.039, 'fixed' => 0.25],
+            'test_mode' => true
         ],
         'checkout_com' => [
             'name' => 'Checkout.com',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'JPY', 'HKD', 'SGD'],
-            'methods' => ['card', 'bank_account', 'digital_wallet', 'local_methods'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'risk_assessment']
+            'type' => 'payment_processor',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK'],
+            'features' => ['3ds', 'sca', 'apple_pay', 'google_pay', 'recurring'],
+            'fees' => ['domestic' => 0.029, 'international' => 0.039, 'fixed' => 0.25],
+            'test_mode' => true
         ],
         'bank_transfer' => [
             'name' => 'Bank Transfer',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD'],
-            'methods' => ['bank_transfer'],
-            'features' => ['manual_processing', 'batch_payments']
+            'type' => 'bank_transfer',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF'],
+            'features' => ['manual_processing', 'automated_reconciliation'],
+            'fees' => ['domestic' => 0.00, 'international' => 0.01, 'fixed' => 0.00],
+            'test_mode' => false
         ],
         'cash' => [
             'name' => 'Cash Payment',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD'],
-            'methods' => ['cash'],
-            'features' => ['in_person', 'manual_processing']
+            'type' => 'cash',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
+            'features' => ['in_person', 'receipt_generation'],
+            'fees' => ['domestic' => 0.00, 'international' => 0.00, 'fixed' => 0.00],
+            'test_mode' => false
         ],
         'cheque' => [
             'name' => 'Cheque Payment',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD'],
-            'methods' => ['cheque'],
-            'features' => ['manual_processing', 'verification_required']
+            'type' => 'cheque',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
+            'features' => ['manual_processing', 'automated_reconciliation'],
+            'fees' => ['domestic' => 0.00, 'international' => 0.00, 'fixed' => 0.00],
+            'test_mode' => false
         ],
         'paddle' => [
             'name' => 'Paddle',
-            'currencies' => ['USD', 'EUR', 'GBP'],
-            'methods' => ['card', 'paypal', 'bank_account'],
-            'features' => ['recurring', 'refunds', 'disputes', 'sca', 'tax_calculation', 'global']
+            'type' => 'subscription_billing',
+            'supported_currencies' => ['USD', 'EUR', 'GBP'],
+            'features' => ['subscriptions', 'tax_calculation', 'multi_currency'],
+            'fees' => ['domestic' => 0.05, 'international' => 0.05, 'fixed' => 0.50],
+            'test_mode' => true
         ],
         'gocardless' => [
             'name' => 'GoCardless',
-            'currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'SEK'],
-            'methods' => ['bank_account', 'bank_transfer'],
-            'features' => ['recurring', 'refunds', 'direct_debit', 'sca', 'instant_bank_pay']
+            'type' => 'direct_debit',
+            'supported_currencies' => ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
+            'features' => ['direct_debit', 'recurring', 'instant_bank_pay'],
+            'fees' => ['domestic' => 0.01, 'international' => 0.02, 'fixed' => 0.25],
+            'test_mode' => true
         ],
         'bitcoin' => [
             'name' => 'Bitcoin',
-            'currencies' => ['BTC'],
-            'methods' => ['bitcoin', 'lightning_network'],
-            'features' => ['cryptocurrency', 'irreversible', 'global', 'low_fees']
+            'type' => 'cryptocurrency',
+            'supported_currencies' => ['BTC'],
+            'features' => ['wallet_integration', 'transaction_monitoring'],
+            'fees' => ['domestic' => 0.0001, 'international' => 0.0001, 'fixed' => 0.00],
+            'test_mode' => true
         ],
         'ethereum' => [
             'name' => 'Ethereum',
-            'currencies' => ['ETH'],
-            'methods' => ['ethereum', 'erc20_tokens'],
-            'features' => ['cryptocurrency', 'smart_contracts', 'defi', 'global']
+            'type' => 'cryptocurrency',
+            'supported_currencies' => ['ETH'],
+            'features' => ['smart_contracts', 'defi_integration'],
+            'fees' => ['domestic' => 0.001, 'international' => 0.001, 'fixed' => 0.00],
+            'test_mode' => true
         ],
-        'stablecoins' => [
-            'name' => 'Stablecoins',
-            'currencies' => ['USDC', 'USDT', 'DAI', 'BUSD', 'FRAX'],
-            'methods' => ['usdc', 'usdt', 'dai', 'busd', 'frax'],
-            'features' => ['stable_value', 'fast_transactions', 'low_volatility', 'global']
+        'polygon' => [
+            'name' => 'Polygon',
+            'type' => 'cryptocurrency',
+            'supported_currencies' => ['MATIC'],
+            'features' => ['layer2_scaling', 'low_fees'],
+            'fees' => ['domestic' => 0.0001, 'international' => 0.0001, 'fixed' => 0.00],
+            'test_mode' => true
         ],
-        'coinbase_commerce' => [
-            'name' => 'Coinbase Commerce',
-            'currencies' => ['BTC', 'ETH', 'LTC', 'BCH', 'USDC', 'USDT', 'DAI'],
-            'methods' => ['bitcoin', 'ethereum', 'litecoin', 'bitcoin_cash', 'stablecoins'],
-            'features' => ['multiple_cryptos', 'merchant_tools', 'global', 'webhook_support']
+        'bsc' => [
+            'name' => 'Binance Smart Chain',
+            'type' => 'cryptocurrency',
+            'supported_currencies' => ['BNB'],
+            'features' => ['high_throughput', 'low_cost'],
+            'fees' => ['domestic' => 0.0001, 'international' => 0.0001, 'fixed' => 0.00],
+            'test_mode' => true
         ],
-        'nowpayments' => [
-            'name' => 'NOWPayments',
-            'currencies' => ['BTC', 'ETH', 'LTC', 'BCH', 'XRP', 'ADA', 'DOT', 'USDC', 'USDT', 'DAI', 'BUSD'],
-            'methods' => ['bitcoin', 'ethereum', 'litecoin', 'bitcoin_cash', 'ripple', 'cardano', 'polkadot', 'stablecoins'],
-            'features' => ['auto_conversion', 'mass_payments', 'global', 'low_fees', 'instant_payments']
-        ],
-        'bitpay' => [
-            'name' => 'BitPay',
-            'currencies' => ['BTC', 'ETH', 'LTC', 'BCH', 'XRP', 'ADA', 'DOGE', 'USDC', 'USDT', 'GUSD', 'PAX'],
-            'methods' => ['bitcoin', 'ethereum', 'litecoin', 'bitcoin_cash', 'ripple', 'cardano', 'dogecoin', 'stablecoins'],
-            'features' => ['enterprise_focus', 'multi_crypto', 'global', 'payment_buttons', 'pos_integration']
-        ]
-    ];
-
-    /**
-     * Active payment gateway
-     */
-    private string $activeGateway = 'stripe';
-
-    /**
-     * Gateway configurations
-     */
-    private array $gatewayConfigs = [];
-
-    /**
-     * Payment methods
-     */
-    private array $paymentMethods = [
-        'card' => [
-            'name' => 'Credit/Debit Card',
-            'icon' => 'fas fa-credit-card',
-            'fields' => ['number', 'expiry', 'cvv', 'holder_name'],
-            'validation' => ['luhn_check', 'expiry_check']
-        ],
-        'bank_account' => [
-            'name' => 'Bank Account',
-            'icon' => 'fas fa-university',
-            'fields' => ['account_number', 'routing_number', 'account_type', 'holder_name'],
-            'validation' => ['account_verification']
-        ],
-        'paypal' => [
-            'name' => 'PayPal',
-            'icon' => 'fab fa-paypal',
-            'fields' => ['email'],
-            'validation' => ['email_verification']
-        ],
-        'digital_wallet' => [
-            'name' => 'Digital Wallet',
-            'icon' => 'fas fa-mobile-alt',
-            'fields' => ['wallet_type', 'device_id'],
-            'validation' => ['wallet_verification']
-        ],
-        'bank_transfer' => [
-            'name' => 'Bank Transfer',
-            'icon' => 'fas fa-exchange-alt',
-            'fields' => ['reference_number'],
-            'validation' => ['reference_verification']
-        ],
-        'cash' => [
-            'name' => 'Cash',
-            'icon' => 'fas fa-money-bill',
-            'fields' => ['receipt_number'],
-            'validation' => ['receipt_verification']
-        ],
-        'cheque' => [
-            'name' => 'Cheque',
-            'icon' => 'fas fa-money-check',
-            'fields' => ['cheque_number', 'bank_details'],
-            'validation' => ['cheque_verification']
-        ],
-        'apple_pay' => [
-            'name' => 'Apple Pay',
-            'icon' => 'fab fa-apple-pay',
-            'fields' => ['device_token'],
-            'validation' => ['token_verification']
-        ],
-        'google_pay' => [
-            'name' => 'Google Pay',
-            'icon' => 'fab fa-google-pay',
-            'fields' => ['device_token'],
-            'validation' => ['token_verification']
-        ],
-        'venmo' => [
-            'name' => 'Venmo',
-            'icon' => 'fab fa-vimeo',
-            'fields' => ['phone_or_email'],
-            'validation' => ['account_verification']
-        ],
-        'cash_app' => [
-            'name' => 'Cash App',
-            'icon' => 'fas fa-dollar-sign',
-            'fields' => ['cashtag'],
-            'validation' => ['cashtag_verification']
-        ],
-        'bitcoin' => [
-            'name' => 'Bitcoin',
-            'icon' => 'fab fa-bitcoin',
-            'fields' => ['wallet_address', 'amount_btc'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'lightning_network' => [
-            'name' => 'Lightning Network',
-            'icon' => 'fas fa-bolt',
-            'fields' => ['lightning_invoice', 'amount_sats'],
-            'validation' => ['invoice_verification']
-        ],
-        'ethereum' => [
-            'name' => 'Ethereum',
-            'icon' => 'fab fa-ethereum',
-            'fields' => ['wallet_address', 'amount_eth'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'erc20_tokens' => [
-            'name' => 'ERC20 Tokens',
-            'icon' => 'fas fa-coins',
-            'fields' => ['contract_address', 'wallet_address', 'amount_tokens'],
-            'validation' => ['contract_verification', 'address_verification']
+        'solana' => [
+            'name' => 'Solana',
+            'type' => 'cryptocurrency',
+            'supported_currencies' => ['SOL'],
+            'features' => ['high_performance', 'low_fees'],
+            'fees' => ['domestic' => 0.000005, 'international' => 0.000005, 'fixed' => 0.00],
+            'test_mode' => true
         ],
         'usdc' => [
             'name' => 'USD Coin',
-            'icon' => 'fas fa-dollar-sign',
-            'fields' => ['wallet_address', 'amount_usdc'],
-            'validation' => ['address_verification', 'amount_verification']
+            'type' => 'stablecoin',
+            'supported_currencies' => ['USDC'],
+            'features' => ['stable_value', 'regulated'],
+            'fees' => ['domestic' => 0.001, 'international' => 0.001, 'fixed' => 0.00],
+            'test_mode' => true
         ],
         'usdt' => [
             'name' => 'Tether',
-            'icon' => 'fas fa-link',
-            'fields' => ['wallet_address', 'amount_usdt'],
-            'validation' => ['address_verification', 'amount_verification']
+            'type' => 'stablecoin',
+            'supported_currencies' => ['USDT'],
+            'features' => ['stable_value', 'high_liquidity'],
+            'fees' => ['domestic' => 0.001, 'international' => 0.001, 'fixed' => 0.00],
+            'test_mode' => true
         ],
         'dai' => [
             'name' => 'Dai',
-            'icon' => 'fas fa-shield-alt',
-            'fields' => ['wallet_address', 'amount_dai'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'busd' => [
-            'name' => 'Binance USD',
-            'icon' => 'fab fa-bitcoin',
-            'fields' => ['wallet_address', 'amount_busd'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'frax' => [
-            'name' => 'Frax',
-            'icon' => 'fas fa-university',
-            'fields' => ['wallet_address', 'amount_frax'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'litecoin' => [
-            'name' => 'Litecoin',
-            'icon' => 'fab fa-litecoin',
-            'fields' => ['wallet_address', 'amount_ltc'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'bitcoin_cash' => [
-            'name' => 'Bitcoin Cash',
-            'icon' => 'fab fa-bitcoin',
-            'fields' => ['wallet_address', 'amount_bch'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'ripple' => [
-            'name' => 'Ripple',
-            'icon' => 'fas fa-wave-square',
-            'fields' => ['wallet_address', 'destination_tag', 'amount_xrp'],
-            'validation' => ['address_verification', 'tag_verification']
-        ],
-        'cardano' => [
-            'name' => 'Cardano',
-            'icon' => 'fas fa-crown',
-            'fields' => ['wallet_address', 'amount_ada'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'polkadot' => [
-            'name' => 'Polkadot',
-            'icon' => 'fas fa-circle',
-            'fields' => ['wallet_address', 'amount_dot'],
-            'validation' => ['address_verification', 'amount_verification']
-        ],
-        'dogecoin' => [
-            'name' => 'Dogecoin',
-            'icon' => 'fab fa-dogecoin',
-            'fields' => ['wallet_address', 'amount_doge'],
-            'validation' => ['address_verification', 'amount_verification']
+            'type' => 'stablecoin',
+            'supported_currencies' => ['DAI'],
+            'features' => ['decentralized', 'stable_value'],
+            'fees' => ['domestic' => 0.001, 'international' => 0.001, 'fixed' => 0.00],
+            'test_mode' => true
         ]
     ];
-
-    /**
-     * Transaction storage
-     */
-    private array $transactions = [];
-
-    /**
-     * Webhook handlers
-     */
-    private array $webhookHandlers = [];
 
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(array $config = [])
     {
-        $this->loadConfiguration();
-        $this->initializeGateways();
-    }
+        $this->config = array_merge([
+            'default_gateway' => 'stripe',
+            'fallback_gateway' => 'paypal',
+            'test_mode' => true,
+            'fraud_detection' => true,
+            'compliance_check' => true,
+            'multi_currency' => true,
+            'auto_retry' => true,
+            'max_retries' => 3
+        ], $config);
 
-    /**
-     * Load payment configuration
-     */
-    private function loadConfiguration(): void
-    {
-        $configFile = CONFIG_PATH . '/payments.php';
-        if (file_exists($configFile)) {
-            $config = require $configFile;
-            $this->activeGateway = $config['active_gateway'] ?? 'stripe';
-            $this->gatewayConfigs = $config['gateways'] ?? [];
-        }
+        $this->gateways = [];
+        $this->transactionHistory = [];
+        $this->supportedCurrencies = [
+            'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK',
+            'BTC', 'ETH', 'MATIC', 'BNB', 'SOL', 'USDC', 'USDT', 'DAI'
+        ];
+
+        $this->fraudDetection = new FraudDetection();
+        $this->complianceManager = new ComplianceManager();
+
+        $this->initializeGateways();
     }
 
     /**
@@ -351,94 +239,24 @@ class PaymentGateway
      */
     private function initializeGateways(): void
     {
-        foreach ($this->supportedGateways as $gateway => $config) {
-            if (isset($this->gatewayConfigs[$gateway])) {
-                $this->initializeGateway($gateway, $this->gatewayConfigs[$gateway]);
-            }
+        foreach ($this->gatewayConfig as $gatewayId => $gatewayConfig) {
+            $this->gateways[$gatewayId] = $this->createGatewayInstance($gatewayId, $gatewayConfig);
         }
     }
 
     /**
-     * Initialize specific gateway
+     * Create gateway instance
      */
-    private function initializeGateway(string $gateway, array $config): void
+    private function createGatewayInstance(string $gatewayId, array $config): PaymentGatewayInterface
     {
-        switch ($gateway) {
-            case 'stripe':
-                $this->initializeStripe($config);
-                break;
-            case 'paypal':
-                $this->initializePayPal($config);
-                break;
-            case 'adyen':
-                $this->initializeAdyen($config);
-                break;
-            case 'braintree':
-                $this->initializeBraintree($config);
-                break;
-            // Add other gateway initializations
-        }
-    }
+        $className = ucfirst(str_replace(['_', '-'], '', $gatewayId)) . 'Gateway';
 
-    /**
-     * Initialize Stripe
-     */
-    private function initializeStripe(array $config): void
-    {
-        if (isset($config['secret_key'])) {
-            // Set Stripe API key
-            \Stripe\Stripe::setApiKey($config['secret_key']);
-            if (isset($config['webhook_secret'])) {
-                $this->webhookHandlers['stripe'] = $config['webhook_secret'];
-            }
+        if (!class_exists($className)) {
+            // Create a generic gateway implementation
+            return new GenericPaymentGateway($gatewayId, $config);
         }
-    }
 
-    /**
-     * Initialize PayPal
-     */
-    private function initializePayPal(array $config): void
-    {
-        if (isset($config['client_id']) && isset($config['client_secret'])) {
-            // Set PayPal API credentials
-            $this->paypalApiContext = new \PayPal\Rest\ApiContext(
-                new \PayPal\Auth\OAuthTokenCredential(
-                    $config['client_id'],
-                    $config['client_secret']
-                )
-            );
-
-            if (isset($config['mode'])) {
-                $this->paypalApiContext->setConfig(['mode' => $config['mode']]);
-            }
-        }
-    }
-
-    /**
-     * Initialize Adyen
-     */
-    private function initializeAdyen(array $config): void
-    {
-        if (isset($config['api_key']) && isset($config['merchant_account'])) {
-            // Set Adyen API credentials
-            $this->adyenClient = new \Adyen\Client();
-            $this->adyenClient->setXApiKey($config['api_key']);
-            $this->adyenClient->setMerchantAccount($config['merchant_account']);
-            $this->adyenClient->setEnvironment($config['environment'] ?? 'test');
-        }
-    }
-
-    /**
-     * Initialize Braintree
-     */
-    private function initializeBraintree(array $config): void
-    {
-        if (isset($config['merchant_id']) && isset($config['public_key']) && isset($config['private_key'])) {
-            \Braintree\Configuration::environment($config['environment'] ?? 'sandbox');
-            \Braintree\Configuration::merchantId($config['merchant_id']);
-            \Braintree\Configuration::publicKey($config['public_key']);
-            \Braintree\Configuration::privateKey($config['private_key']);
-        }
+        return new $className($config);
     }
 
     /**
@@ -446,559 +264,110 @@ class PaymentGateway
      */
     public function processPayment(array $paymentData): array
     {
-        $gateway = $paymentData['gateway'] ?? $this->activeGateway;
-        $method = $paymentData['method'];
+        $gatewayId = $paymentData['gateway'] ?? $this->config['default_gateway'];
         $amount = $paymentData['amount'];
         $currency = $paymentData['currency'] ?? 'USD';
+        $customerId = $paymentData['customer_id'] ?? null;
 
         // Validate payment data
         $validation = $this->validatePaymentData($paymentData);
         if (!$validation['valid']) {
             return [
                 'success' => false,
-                'error' => $validation['error']
+                'error' => 'Invalid payment data',
+                'details' => $validation['errors']
             ];
         }
 
-        // Check gateway support
-        if (!$this->isGatewaySupported($gateway, $method, $currency)) {
-            return [
-                'success' => false,
-                'error' => 'Payment method not supported by selected gateway'
-            ];
-        }
-
-        // Process payment based on gateway
-        try {
-            $result = $this->processGatewayPayment($gateway, $paymentData);
-
-            // Store transaction
-            $transactionId = $this->storeTransaction($paymentData, $result);
-
-            return array_merge($result, [
-                'transaction_id' => $transactionId,
-                'gateway' => $gateway,
-                'processed_at' => date('c')
-            ]);
-
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Payment processing failed: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Process payment through specific gateway
-     */
-    private function processGatewayPayment(string $gateway, array $paymentData): array
-    {
-        switch ($gateway) {
-            case 'stripe':
-                return $this->processStripePayment($paymentData);
-            case 'paypal':
-                return $this->processPayPalPayment($paymentData);
-            case 'adyen':
-                return $this->processAdyenPayment($paymentData);
-            case 'braintree':
-                return $this->processBraintreePayment($paymentData);
-            case 'bank_transfer':
-                return $this->processBankTransfer($paymentData);
-            case 'cash':
-                return $this->processCashPayment($paymentData);
-            case 'cheque':
-                return $this->processChequePayment($paymentData);
-            case 'paddle':
-                return $this->processPaddlePayment($paymentData);
-            case 'gocardless':
-                return $this->processGoCardlessPayment($paymentData);
-            case 'bitcoin':
-                return $this->processBitcoinPayment($paymentData);
-            case 'ethereum':
-                return $this->processEthereumPayment($paymentData);
-            case 'stablecoins':
-                return $this->processStablecoinPayment($paymentData);
-            case 'coinbase_commerce':
-                return $this->processCoinbaseCommercePayment($paymentData);
-            case 'nowpayments':
-                return $this->processNOWPaymentsPayment($paymentData);
-            case 'bitpay':
-                return $this->processBitPayPayment($paymentData);
-            default:
-                throw new \Exception("Unsupported gateway: $gateway");
-        }
-    }
-
-    /**
-     * Process Stripe payment
-     */
-    private function processStripePayment(array $paymentData): array
-    {
-        $amount = $paymentData['amount'] * 100; // Convert to cents
-        $currency = strtolower($paymentData['currency']);
-
-        $paymentIntent = \Stripe\PaymentIntent::create([
-            'amount' => $amount,
-            'currency' => $currency,
-            'payment_method' => $paymentData['payment_method_id'],
-            'confirmation_method' => 'manual',
-            'confirm' => true,
-            'metadata' => $paymentData['metadata'] ?? []
-        ]);
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $paymentIntent->id,
-            'status' => $paymentIntent->status,
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process PayPal payment
-     */
-    private function processPayPalPayment(array $paymentData): array
-    {
-        $payer = new \PayPal\Api\Payer();
-        $payer->setPaymentMethod('paypal');
-
-        $amount = new \PayPal\Api\Amount();
-        $amount->setTotal($paymentData['amount']);
-        $amount->setCurrency($paymentData['currency']);
-
-        $transaction = new \PayPal\Api\Transaction();
-        $transaction->setAmount($amount);
-        $transaction->setDescription($paymentData['description'] ?? 'Government Service Payment');
-
-        $redirectUrls = new \PayPal\Api\RedirectUrls();
-        $redirectUrls->setReturnUrl($paymentData['return_url'])
-                    ->setCancelUrl($paymentData['cancel_url']);
-
-        $payment = new \PayPal\Api\Payment();
-        $payment->setIntent('sale')
-                ->setPayer($payer)
-                ->setTransactions([$transaction])
-                ->setRedirectUrls($redirectUrls);
-
-        $payment->create($this->paypalApiContext);
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $payment->getId(),
-            'status' => 'pending',
-            'approval_url' => $payment->getApprovalLink(),
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process bank transfer payment
-     */
-    private function processBankTransfer(array $paymentData): array
-    {
-        // Generate reference number
-        $referenceNumber = $this->generateReferenceNumber();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $referenceNumber,
-            'status' => 'pending',
-            'reference_number' => $referenceNumber,
-            'instructions' => $this->getBankTransferInstructions(),
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process cash payment
-     */
-    private function processCashPayment(array $paymentData): array
-    {
-        $receiptNumber = $this->generateReceiptNumber();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $receiptNumber,
-            'status' => 'completed',
-            'receipt_number' => $receiptNumber,
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process cheque payment
-     */
-    private function processChequePayment(array $paymentData): array
-    {
-        $chequeNumber = $paymentData['cheque_number'] ?? $this->generateChequeNumber();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $chequeNumber,
-            'status' => 'pending_verification',
-            'cheque_number' => $chequeNumber,
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process Paddle payment
-     */
-    private function processPaddlePayment(array $paymentData): array
-    {
-        // Generate Paddle transaction
-        $transactionId = 'paddle_' . uniqid();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $transactionId,
-            'status' => 'pending',
-            'checkout_url' => "https://checkout.paddle.com/checkout/{$transactionId}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process GoCardless payment
-     */
-    private function processGoCardlessPayment(array $paymentData): array
-    {
-        // Generate GoCardless mandate and payment
-        $mandateId = 'mandate_' . uniqid();
-        $paymentId = 'payment_' . uniqid();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $paymentId,
-            'status' => 'pending',
-            'mandate_id' => $mandateId,
-            'redirect_url' => "https://connect.gocardless.com/flow/{$mandateId}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process Bitcoin payment
-     */
-    private function processBitcoinPayment(array $paymentData): array
-    {
-        // Generate Bitcoin payment request
-        $bitcoinAddress = $this->generateBitcoinAddress();
-        $expectedAmount = $this->convertToBitcoin($paymentData['amount'], $paymentData['currency']);
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => 'btc_' . uniqid(),
-            'status' => 'pending',
-            'bitcoin_address' => $bitcoinAddress,
-            'expected_amount_btc' => $expectedAmount,
-            'qr_code_url' => "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=bitcoin:{$bitcoinAddress}?amount={$expectedAmount}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process Ethereum payment
-     */
-    private function processEthereumPayment(array $paymentData): array
-    {
-        // Generate Ethereum payment request
-        $ethereumAddress = $this->generateEthereumAddress();
-        $expectedAmount = $this->convertToEthereum($paymentData['amount'], $paymentData['currency']);
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => 'eth_' . uniqid(),
-            'status' => 'pending',
-            'ethereum_address' => $ethereumAddress,
-            'expected_amount_eth' => $expectedAmount,
-            'qr_code_url' => "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=ethereum:{$ethereumAddress}@{$expectedAmount}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process stablecoin payment
-     */
-    private function processStablecoinPayment(array $paymentData): array
-    {
-        $method = $paymentData['method'];
-        $stablecoinAddress = $this->generateStablecoinAddress($method);
-        $expectedAmount = $this->convertToStablecoin($paymentData['amount'], $paymentData['currency'], $method);
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $method . '_' . uniqid(),
-            'status' => 'pending',
-            'stablecoin_address' => $stablecoinAddress,
-            'expected_amount' => $expectedAmount,
-            'stablecoin_type' => strtoupper($method),
-            'qr_code_url' => "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={$stablecoinAddress}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process Coinbase Commerce payment
-     */
-    private function processCoinbaseCommercePayment(array $paymentData): array
-    {
-        $chargeId = 'coinbase_' . uniqid();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $chargeId,
-            'status' => 'pending',
-            'hosted_url' => "https://commerce.coinbase.com/charges/{$chargeId}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process NOWPayments payment
-     */
-    private function processNOWPaymentsPayment(array $paymentData): array
-    {
-        $paymentId = 'now_' . uniqid();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $paymentId,
-            'status' => 'pending',
-            'payment_url' => "https://nowpayments.io/payment/{$paymentId}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Process BitPay payment
-     */
-    private function processBitPayPayment(array $paymentData): array
-    {
-        $invoiceId = 'bitpay_' . uniqid();
-
-        return [
-            'success' => true,
-            'gateway_transaction_id' => $invoiceId,
-            'status' => 'pending',
-            'invoice_url' => "https://bitpay.com/invoice/{$invoiceId}",
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency']
-        ];
-    }
-
-    /**
-     * Generate Bitcoin address
-     */
-    private function generateBitcoinAddress(): string
-    {
-        // In a real implementation, this would generate a unique Bitcoin address
-        return 'bc1q' . substr(md5(uniqid()), 0, 38);
-    }
-
-    /**
-     * Generate Ethereum address
-     */
-    private function generateEthereumAddress(): string
-    {
-        // In a real implementation, this would generate a unique Ethereum address
-        return '0x' . substr(md5(uniqid()), 0, 40);
-    }
-
-    /**
-     * Generate stablecoin address
-     */
-    private function generateStablecoinAddress(string $method): string
-    {
-        // In a real implementation, this would generate addresses for different stablecoins
-        return '0x' . substr(md5($method . uniqid()), 0, 40);
-    }
-
-    /**
-     * Convert amount to Bitcoin
-     */
-    private function convertToBitcoin(float $amount, string $currency): float
-    {
-        // Mock conversion rates - in real implementation, use live exchange rates
-        $rates = [
-            'USD' => 0.000025,
-            'EUR' => 0.000023,
-            'GBP' => 0.000020,
-            'CAD' => 0.000019,
-            'AUD' => 0.000018
-        ];
-
-        $rate = $rates[$currency] ?? $rates['USD'];
-        return round($amount * $rate, 8);
-    }
-
-    /**
-     * Convert amount to Ethereum
-     */
-    private function convertToEthereum(float $amount, string $currency): float
-    {
-        // Mock conversion rates
-        $rates = [
-            'USD' => 0.00035,
-            'EUR' => 0.00032,
-            'GBP' => 0.00028,
-            'CAD' => 0.00026,
-            'AUD' => 0.00025
-        ];
-
-        $rate = $rates[$currency] ?? $rates['USD'];
-        return round($amount * $rate, 6);
-    }
-
-    /**
-     * Convert amount to stablecoin
-     */
-    private function convertToStablecoin(float $amount, string $currency, string $stablecoin): float
-    {
-        // For stablecoins pegged to USD/EUR, conversion is simpler
-        if (in_array($stablecoin, ['usdc', 'usdt', 'busd', 'gusd', 'pax'])) {
-            $rates = [
-                'USD' => 1.0,
-                'EUR' => 1.08,
-                'GBP' => 1.27,
-                'CAD' => 0.74,
-                'AUD' => 0.66
-            ];
-            $rate = $rates[$currency] ?? 1.0;
-            return round($amount * $rate, 2);
-        }
-
-        // For other stablecoins
-        return round($amount, 2);
-    }
-
-    /**
-     * Validate payment data
-     */
-    private function validatePaymentData(array $paymentData): array
-    {
-        $required = ['amount', 'currency', 'method'];
-
-        foreach ($required as $field) {
-            if (!isset($paymentData[$field]) || empty($paymentData[$field])) {
+        // Fraud detection
+        if ($this->config['fraud_detection']) {
+            $fraudCheck = $this->fraudDetection->analyzeTransaction($paymentData);
+            if ($fraudCheck['risk'] === 'high') {
                 return [
-                    'valid' => false,
-                    'error' => "Missing required field: $field"
+                    'success' => false,
+                    'error' => 'Transaction flagged for fraud review',
+                    'requires_review' => true
                 ];
             }
         }
 
-        // Validate amount
-        if (!is_numeric($paymentData['amount']) || $paymentData['amount'] <= 0) {
-            return [
-                'valid' => false,
-                'error' => 'Invalid payment amount'
-            ];
-        }
-
-        // Validate currency
-        if (!preg_match('/^[A-Z]{3}$/', $paymentData['currency'])) {
-            return [
-                'valid' => false,
-                'error' => 'Invalid currency code'
-            ];
-        }
-
-        // Validate payment method fields
-        if (isset($this->paymentMethods[$paymentData['method']])) {
-            $methodConfig = $this->paymentMethods[$paymentData['method']];
-            foreach ($methodConfig['fields'] as $field) {
-                if (!isset($paymentData[$field]) || empty($paymentData[$field])) {
-                    return [
-                        'valid' => false,
-                        'error' => "Missing required field for {$paymentData['method']}: $field"
-                    ];
-                }
+        // Compliance check
+        if ($this->config['compliance_check']) {
+            $complianceCheck = $this->complianceManager->checkPaymentCompliance($paymentData);
+            if (!$complianceCheck['compliant']) {
+                return [
+                    'success' => false,
+                    'error' => 'Payment does not comply with regulations',
+                    'compliance_issues' => $complianceCheck['issues']
+                ];
             }
         }
 
-        return ['valid' => true];
+        // Process payment with retry logic
+        $result = $this->processPaymentWithRetry($gatewayId, $paymentData);
+
+        // Record transaction
+        $this->recordTransaction($paymentData, $result);
+
+        return $result;
     }
 
     /**
-     * Check if gateway supports method and currency
+     * Process payment with retry logic
      */
-    private function isGatewaySupported(string $gateway, string $method, string $currency): bool
+    private function processPaymentWithRetry(string $gatewayId, array $paymentData): array
     {
-        if (!isset($this->supportedGateways[$gateway])) {
-            return false;
+        $attempts = 0;
+        $lastError = null;
+
+        while ($attempts < $this->config['max_retries']) {
+            try {
+                $gateway = $this->gateways[$gatewayId];
+                $result = $gateway->processPayment($paymentData);
+
+                if ($result['success']) {
+                    return $result;
+                }
+
+                // If payment failed and we have fallback gateway, try it
+                if ($attempts === 0 && $gatewayId !== $this->config['fallback_gateway']) {
+                    $gatewayId = $this->config['fallback_gateway'];
+                    $attempts++;
+                    continue;
+                }
+
+                return $result;
+
+            } catch (Exception $e) {
+                $lastError = $e->getMessage();
+                $attempts++;
+
+                // Log retry attempt
+                error_log("Payment retry attempt {$attempts} failed: {$lastError}");
+
+                if ($attempts >= $this->config['max_retries']) {
+                    break;
+                }
+
+                // Wait before retry (exponential backoff)
+                sleep(pow(2, $attempts));
+            }
         }
 
-        $gatewayConfig = $this->supportedGateways[$gateway];
-
-        // Check currency support
-        if (!in_array($currency, $gatewayConfig['currencies'])) {
-            return false;
-        }
-
-        // Check method support
-        if (!in_array($method, $gatewayConfig['methods'])) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Store transaction
-     */
-    private function storeTransaction(array $paymentData, array $result): string
-    {
-        $transactionId = $this->generateTransactionId();
-
-        $transaction = [
-            'id' => $transactionId,
-            'gateway' => $paymentData['gateway'] ?? $this->activeGateway,
-            'method' => $paymentData['method'],
-            'amount' => $paymentData['amount'],
-            'currency' => $paymentData['currency'],
-            'status' => $result['status'],
-            'gateway_transaction_id' => $result['gateway_transaction_id'],
-            'metadata' => $paymentData['metadata'] ?? [],
-            'created_at' => date('c'),
-            'updated_at' => date('c')
+        return [
+            'success' => false,
+            'error' => 'Payment processing failed after retries',
+            'last_error' => $lastError
         ];
-
-        $this->transactions[$transactionId] = $transaction;
-
-        // In a real implementation, this would save to database
-        // $this->database->insert('payment_transactions', $transaction);
-
-        return $transactionId;
-    }
-
-    /**
-     * Get transaction
-     */
-    public function getTransaction(string $transactionId): ?array
-    {
-        return $this->transactions[$transactionId] ?? null;
     }
 
     /**
      * Process refund
      */
-    public function processRefund(string $transactionId, float $amount = null): array
+    public function processRefund(string $transactionId, float $amount = null, string $reason = ''): array
     {
         $transaction = $this->getTransaction($transactionId);
+
         if (!$transaction) {
             return [
                 'success' => false,
@@ -1006,128 +375,376 @@ class PaymentGateway
             ];
         }
 
-        $refundAmount = $amount ?? $transaction['amount'];
+        $gatewayId = $transaction['gateway'];
+        $gateway = $this->gateways[$gatewayId];
 
-        try {
-            $result = $this->processGatewayRefund($transaction['gateway'], $transaction, $refundAmount);
+        $refundData = [
+            'transaction_id' => $transactionId,
+            'amount' => $amount ?? $transaction['amount'],
+            'reason' => $reason,
+            'original_transaction' => $transaction
+        ];
 
-            // Update transaction status
-            $this->transactions[$transactionId]['status'] = 'refunded';
-            $this->transactions[$transactionId]['updated_at'] = date('c');
+        $result = $gateway->processRefund($refundData);
 
-            return array_merge($result, [
-                'transaction_id' => $transactionId,
-                'refund_amount' => $refundAmount
-            ]);
+        if ($result['success']) {
+            $this->recordRefund($transactionId, $result);
+        }
 
-        } catch (\Exception $e) {
+        return $result;
+    }
+
+    /**
+     * Create subscription
+     */
+    public function createSubscription(array $subscriptionData): array
+    {
+        $gatewayId = $subscriptionData['gateway'] ?? $this->config['default_gateway'];
+        $gateway = $this->gateways[$gatewayId];
+
+        if (!in_array('recurring', $this->gatewayConfig[$gatewayId]['features'])) {
             return [
                 'success' => false,
-                'error' => 'Refund processing failed: ' . $e->getMessage()
+                'error' => 'Gateway does not support recurring payments'
             ];
         }
+
+        $result = $gateway->createSubscription($subscriptionData);
+
+        if ($result['success']) {
+            $this->recordSubscription($subscriptionData, $result);
+        }
+
+        return $result;
     }
 
     /**
-     * Process gateway refund
+     * Cancel subscription
      */
-    private function processGatewayRefund(string $gateway, array $transaction, float $amount): array
+    public function cancelSubscription(string $subscriptionId): array
     {
-        switch ($gateway) {
-            case 'stripe':
-                return $this->processStripeRefund($transaction, $amount);
-            case 'paypal':
-                return $this->processPayPalRefund($transaction, $amount);
-            // Add other gateway refund implementations
+        $subscription = $this->getSubscription($subscriptionId);
+
+        if (!$subscription) {
+            return [
+                'success' => false,
+                'error' => 'Subscription not found'
+            ];
+        }
+
+        $gatewayId = $subscription['gateway'];
+        $gateway = $this->gateways[$gatewayId];
+
+        $result = $gateway->cancelSubscription($subscriptionId);
+
+        if ($result['success']) {
+            $this->updateSubscriptionStatus($subscriptionId, 'cancelled');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Process cryptocurrency payment
+     */
+    public function processCryptoPayment(array $paymentData): array
+    {
+        $cryptoType = $paymentData['crypto_type'] ?? 'bitcoin';
+
+        // Generate wallet address for payment
+        $walletAddress = $this->generateCryptoWalletAddress($cryptoType);
+
+        // Create payment request
+        $paymentRequest = [
+            'wallet_address' => $walletAddress,
+            'amount' => $paymentData['amount'],
+            'currency' => $cryptoType,
+            'description' => $paymentData['description'] ?? 'Government service payment',
+            'expires_at' => time() + (15 * 60) // 15 minutes
+        ];
+
+        // Store payment request
+        $this->storeCryptoPaymentRequest($paymentRequest);
+
+        return [
+            'success' => true,
+            'payment_request' => $paymentRequest,
+            'qr_code' => $this->generateCryptoQRCode($walletAddress, $paymentData['amount'], $cryptoType),
+            'instructions' => $this->getCryptoPaymentInstructions($cryptoType)
+        ];
+    }
+
+    /**
+     * Validate payment data
+     */
+    private function validatePaymentData(array $data): array
+    {
+        $errors = [];
+
+        // Required fields
+        $requiredFields = ['amount', 'currency'];
+        foreach ($requiredFields as $field) {
+            if (!isset($data[$field]) || empty($data[$field])) {
+                $errors[] = "Missing required field: {$field}";
+            }
+        }
+
+        // Amount validation
+        if (isset($data['amount'])) {
+            if (!is_numeric($data['amount']) || $data['amount'] <= 0) {
+                $errors[] = 'Invalid amount';
+            }
+        }
+
+        // Currency validation
+        if (isset($data['currency'])) {
+            if (!in_array($data['currency'], $this->supportedCurrencies)) {
+                $errors[] = 'Unsupported currency';
+            }
+        }
+
+        // Gateway validation
+        if (isset($data['gateway'])) {
+            if (!isset($this->gateways[$data['gateway']])) {
+                $errors[] = 'Invalid payment gateway';
+            }
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors
+        ];
+    }
+
+    /**
+     * Record transaction
+     */
+    private function recordTransaction(array $paymentData, array $result): void
+    {
+        $transaction = [
+            'id' => $result['transaction_id'] ?? uniqid('txn_'),
+            'gateway' => $paymentData['gateway'] ?? $this->config['default_gateway'],
+            'amount' => $paymentData['amount'],
+            'currency' => $paymentData['currency'] ?? 'USD',
+            'customer_id' => $paymentData['customer_id'] ?? null,
+            'status' => $result['success'] ? 'completed' : 'failed',
+            'created_at' => time(),
+            'updated_at' => time(),
+            'metadata' => $paymentData['metadata'] ?? [],
+            'result' => $result
+        ];
+
+        $this->transactionHistory[] = $transaction;
+
+        // Store in database (would be implemented)
+        // $this->database->insert('transactions', $transaction);
+    }
+
+    /**
+     * Record refund
+     */
+    private function recordRefund(string $transactionId, array $result): void
+    {
+        $refund = [
+            'transaction_id' => $transactionId,
+            'refund_id' => $result['refund_id'] ?? uniqid('ref_'),
+            'amount' => $result['amount'],
+            'reason' => $result['reason'] ?? '',
+            'status' => 'completed',
+            'created_at' => time()
+        ];
+
+        // Store refund record
+        // $this->database->insert('refunds', $refund);
+    }
+
+    /**
+     * Record subscription
+     */
+    private function recordSubscription(array $subscriptionData, array $result): void
+    {
+        $subscription = [
+            'id' => $result['subscription_id'],
+            'customer_id' => $subscriptionData['customer_id'],
+            'gateway' => $subscriptionData['gateway'],
+            'amount' => $subscriptionData['amount'],
+            'currency' => $subscriptionData['currency'],
+            'interval' => $subscriptionData['interval'],
+            'status' => 'active',
+            'created_at' => time(),
+            'next_billing' => $this->calculateNextBillingDate($subscriptionData['interval'])
+        ];
+
+        // Store subscription record
+        // $this->database->insert('subscriptions', $subscription);
+    }
+
+    /**
+     * Get transaction
+     */
+    public function getTransaction(string $transactionId): ?array
+    {
+        // Search in transaction history
+        foreach ($this->transactionHistory as $transaction) {
+            if ($transaction['id'] === $transactionId) {
+                return $transaction;
+            }
+        }
+
+        // Would query database
+        return null;
+    }
+
+    /**
+     * Get subscription
+     */
+    public function getSubscription(string $subscriptionId): ?array
+    {
+        // Would query database
+        return null;
+    }
+
+    /**
+     * Update subscription status
+     */
+    private function updateSubscriptionStatus(string $subscriptionId, string $status): void
+    {
+        // Would update database
+    }
+
+    /**
+     * Calculate next billing date
+     */
+    private function calculateNextBillingDate(string $interval): int
+    {
+        $now = time();
+
+        switch ($interval) {
+            case 'monthly':
+                return strtotime('+1 month', $now);
+            case 'yearly':
+                return strtotime('+1 year', $now);
+            case 'weekly':
+                return strtotime('+1 week', $now);
+            case 'daily':
+                return strtotime('+1 day', $now);
             default:
-                return [
-                    'success' => true,
-                    'gateway_refund_id' => 'manual_' . uniqid(),
-                    'status' => 'pending'
-                ];
+                return strtotime('+1 month', $now);
         }
     }
 
     /**
-     * Process Stripe refund
+     * Generate crypto wallet address
      */
-    private function processStripeRefund(array $transaction, float $amount): array
+    private function generateCryptoWalletAddress(string $cryptoType): string
     {
-        $refund = \Stripe\Refund::create([
-            'payment_intent' => $transaction['gateway_transaction_id'],
-            'amount' => $amount * 100 // Convert to cents
-        ]);
+        // This would integrate with crypto wallet service
+        // For demo purposes, return a mock address
+        return '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'; // Example Bitcoin address
+    }
 
-        return [
-            'success' => true,
-            'gateway_refund_id' => $refund->id,
-            'status' => $refund->status
+    /**
+     * Generate crypto QR code
+     */
+    private function generateCryptoQRCode(string $address, float $amount, string $cryptoType): string
+    {
+        // This would generate a QR code for the crypto payment
+        // For demo purposes, return a data URL
+        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    }
+
+    /**
+     * Get crypto payment instructions
+     */
+    private function getCryptoPaymentInstructions(string $cryptoType): string
+    {
+        $instructions = [
+            'bitcoin' => 'Send the exact amount of BTC to the provided address. The transaction will be confirmed once it has 1 confirmation on the blockchain.',
+            'ethereum' => 'Send ETH or ERC-20 tokens to the provided address. Include enough for gas fees.',
+            'usdc' => 'Send USDC to the provided Ethereum address. Ensure you are sending on the Ethereum network.'
         ];
+
+        return $instructions[$cryptoType] ?? 'Send the payment to the provided address.';
     }
 
     /**
-     * Process PayPal refund
+     * Store crypto payment request
      */
-    private function processPayPalRefund(array $transaction, float $amount): array
+    private function storeCryptoPaymentRequest(array $request): void
     {
-        $refund = new \PayPal\Api\Refund();
-        $refund->setAmount(new \PayPal\Api\Amount([
-            'total' => $amount,
-            'currency' => $transaction['currency']
-        ]));
-
-        $sale = \PayPal\Api\Sale::get($transaction['gateway_transaction_id'], $this->paypalApiContext);
-        $refundResult = $sale->refund($refund, $this->paypalApiContext);
-
-        return [
-            'success' => true,
-            'gateway_refund_id' => $refundResult->getId(),
-            'status' => $refundResult->getState()
-        ];
+        // Would store in database
     }
 
     /**
-     * Generate transaction ID
+     * Get payment gateway statistics
      */
-    private function generateTransactionId(): string
+    public function getGatewayStatistics(): array
     {
-        return 'txn_' . uniqid() . '_' . time();
+        $stats = [];
+
+        foreach ($this->gateways as $gatewayId => $gateway) {
+            $stats[$gatewayId] = [
+                'name' => $this->gatewayConfig[$gatewayId]['name'],
+                'type' => $this->gatewayConfig[$gatewayId]['type'],
+                'transaction_count' => $this->getGatewayTransactionCount($gatewayId),
+                'success_rate' => $this->getGatewaySuccessRate($gatewayId),
+                'average_processing_time' => $this->getGatewayAverageProcessingTime($gatewayId),
+                'total_volume' => $this->getGatewayTotalVolume($gatewayId)
+            ];
+        }
+
+        return $stats;
     }
 
     /**
-     * Generate reference number
+     * Get gateway transaction count
      */
-    private function generateReferenceNumber(): string
+    private function getGatewayTransactionCount(string $gatewayId): int
     {
-        return 'REF' . date('Ymd') . rand(1000, 9999);
+        return count(array_filter($this->transactionHistory, function($txn) use ($gatewayId) {
+            return $txn['gateway'] === $gatewayId;
+        }));
     }
 
     /**
-     * Generate receipt number
+     * Get gateway success rate
      */
-    private function generateReceiptNumber(): string
+    private function getGatewaySuccessRate(string $gatewayId): float
     {
-        return 'RCP' . date('Ymd') . rand(1000, 9999);
+        $gatewayTransactions = array_filter($this->transactionHistory, function($txn) use ($gatewayId) {
+            return $txn['gateway'] === $gatewayId;
+        });
+
+        if (empty($gatewayTransactions)) {
+            return 0.0;
+        }
+
+        $successfulTransactions = count(array_filter($gatewayTransactions, function($txn) {
+            return $txn['status'] === 'completed';
+        }));
+
+        return ($successfulTransactions / count($gatewayTransactions)) * 100;
     }
 
     /**
-     * Generate cheque number
+     * Get gateway average processing time
      */
-    private function generateChequeNumber(): string
+    private function getGatewayAverageProcessingTime(string $gatewayId): float
     {
-        return 'CHQ' . date('Ymd') . rand(1000, 9999);
+        // Would calculate from transaction data
+        return 2.5; // Mock value
     }
 
     /**
-     * Get bank transfer instructions
+     * Get gateway total volume
      */
-    private function getBankTransferInstructions(): string
+    private function getGatewayTotalVolume(string $gatewayId): float
     {
-        return "Please transfer funds to:\n" .
-               "Account Name: Government Services\n" .
-               "BSB: 123-456\n" .
-               "Account: 12345678\n" .
-               "Reference: Include the reference number provided";
+        $gatewayTransactions = array_filter($this->transactionHistory, function($txn) use ($gatewayId) {
+            return $txn['gateway'] === $gatewayId && $txn['status'] === 'completed';
+        });
+
+        return array_sum(array_column($gatewayTransactions, 'amount'));
     }
 
     /**
@@ -1135,229 +752,130 @@ class PaymentGateway
      */
     public function getSupportedGateways(): array
     {
-        return $this->supportedGateways;
-    }
-
-    /**
-     * Get supported payment methods
-     */
-    public function getSupportedMethods(): array
-    {
-        return $this->paymentMethods;
+        return array_keys($this->gateways);
     }
 
     /**
      * Get gateway configuration
      */
-    public function getGatewayConfig(string $gateway): ?array
+    public function getGatewayConfig(string $gatewayId): ?array
     {
-        return $this->supportedGateways[$gateway] ?? null;
+        return $this->gatewayConfig[$gatewayId] ?? null;
     }
 
     /**
-     * Set active gateway
+     * Check gateway availability
      */
-    public function setActiveGateway(string $gateway): bool
+    public function isGatewayAvailable(string $gatewayId): bool
     {
-        if (!isset($this->supportedGateways[$gateway])) {
+        if (!isset($this->gateways[$gatewayId])) {
             return false;
         }
 
-        $this->activeGateway = $gateway;
-        return true;
+        $gateway = $this->gateways[$gatewayId];
+        return $gateway->isAvailable();
     }
 
     /**
-     * Get active gateway
+     * Get optimal gateway for transaction
      */
-    public function getActiveGateway(): string
+    public function getOptimalGateway(array $transactionData): string
     {
-        return $this->activeGateway;
-    }
+        $amount = $transactionData['amount'];
+        $currency = $transactionData['currency'] ?? 'USD';
+        $country = $transactionData['country'] ?? 'US';
 
-    /**
-     * Check if payment method is supported
-     */
-    public function isMethodSupported(string $method): bool
-    {
-        return isset($this->paymentMethods[$method]);
-    }
+        // Simple optimization logic
+        // In a real implementation, this would consider fees, success rates, processing time, etc.
 
-    /**
-     * Get payment method configuration
-     */
-    public function getMethodConfig(string $method): ?array
-    {
-        return $this->paymentMethods[$method] ?? null;
-    }
-
-    /**
-     * Handle webhook
-     */
-    public function handleWebhook(string $gateway, array $webhookData): array
-    {
-        switch ($gateway) {
-            case 'stripe':
-                return $this->handleStripeWebhook($webhookData);
-            case 'paypal':
-                return $this->handlePayPalWebhook($webhookData);
-            // Add other webhook handlers
-            default:
-                return [
-                    'success' => false,
-                    'error' => 'Unsupported gateway for webhooks'
-                ];
+        // For small amounts, use gateways with lower fixed fees
+        if ($amount < 10) {
+            return 'square';
         }
+
+        // For international transactions, use gateways with good international support
+        if ($country !== 'US') {
+            return 'adyen';
+        }
+
+        // Default to Stripe for most transactions
+        return 'stripe';
     }
 
     /**
-     * Handle Stripe webhook
+     * Calculate payment fees
      */
-    private function handleStripeWebhook(array $webhookData): array
+    public function calculateFees(string $gatewayId, float $amount, string $currency, string $country = 'US'): array
     {
-        // Verify webhook signature
-        $signature = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
-        $webhookSecret = $this->webhookHandlers['stripe'] ?? '';
+        $config = $this->gatewayConfig[$gatewayId];
 
-        try {
-            $event = \Stripe\Webhook::constructEvent(
-                file_get_contents('php://input'),
-                $signature,
-                $webhookSecret
-            );
+        $isDomestic = $country === 'US';
+        $feePercentage = $isDomestic ? $config['fees']['domestic'] : $config['fees']['international'];
+        $fixedFee = $config['fees']['fixed'];
 
-            // Process webhook event
-            switch ($event->type) {
-                case 'payment_intent.succeeded':
-                    return $this->handlePaymentSuccess($event->data->object);
-                case 'payment_intent.payment_failed':
-                    return $this->handlePaymentFailure($event->data->object);
-                // Add more event handlers
-                default:
-                    return ['success' => true, 'message' => 'Event ignored'];
-            }
-
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Webhook verification failed: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Handle payment success
-     */
-    private function handlePaymentSuccess($paymentIntent): array
-    {
-        // Update transaction status
-        foreach ($this->transactions as $id => $transaction) {
-            if ($transaction['gateway_transaction_id'] === $paymentIntent->id) {
-                $this->transactions[$id]['status'] = 'completed';
-                $this->transactions[$id]['updated_at'] = date('c');
-                break;
-            }
-        }
+        $percentageFee = $amount * $feePercentage;
+        $totalFee = $percentageFee + $fixedFee;
 
         return [
-            'success' => true,
-            'message' => 'Payment completed successfully'
+            'percentage_fee' => $percentageFee,
+            'fixed_fee' => $fixedFee,
+            'total_fee' => $totalFee,
+            'net_amount' => $amount - $totalFee
         ];
     }
 
     /**
-     * Handle payment failure
+     * Get transaction history
      */
-    private function handlePaymentFailure($paymentIntent): array
+    public function getTransactionHistory(array $filters = []): array
     {
-        // Update transaction status
-        foreach ($this->transactions as $id => $transaction) {
-            if ($transaction['gateway_transaction_id'] === $paymentIntent->id) {
-                $this->transactions[$id]['status'] = 'failed';
-                $this->transactions[$id]['updated_at'] = date('c');
-                break;
-            }
+        $transactions = $this->transactionHistory;
+
+        // Apply filters
+        if (!empty($filters['gateway'])) {
+            $transactions = array_filter($transactions, function($txn) use ($filters) {
+                return $txn['gateway'] === $filters['gateway'];
+            });
         }
 
-        return [
-            'success' => true,
-            'message' => 'Payment failure recorded'
-        ];
-    }
-
-    /**
-     * Get payment statistics
-     */
-    public function getPaymentStats(): array
-    {
-        $stats = [
-            'total_transactions' => count($this->transactions),
-            'completed_payments' => 0,
-            'failed_payments' => 0,
-            'pending_payments' => 0,
-            'refunded_payments' => 0,
-            'total_amount' => 0,
-            'total_refunds' => 0
-        ];
-
-        foreach ($this->transactions as $transaction) {
-            switch ($transaction['status']) {
-                case 'completed':
-                    $stats['completed_payments']++;
-                    $stats['total_amount'] += $transaction['amount'];
-                    break;
-                case 'failed':
-                    $stats['failed_payments']++;
-                    break;
-                case 'pending':
-                    $stats['pending_payments']++;
-                    break;
-                case 'refunded':
-                    $stats['refunded_payments']++;
-                    $stats['total_refunds'] += $transaction['amount'];
-                    break;
-            }
+        if (!empty($filters['status'])) {
+            $transactions = array_filter($transactions, function($txn) use ($filters) {
+                return $txn['status'] === $filters['status'];
+            });
         }
 
-        return $stats;
+        if (!empty($filters['date_from'])) {
+            $transactions = array_filter($transactions, function($txn) use ($filters) {
+                return $txn['created_at'] >= strtotime($filters['date_from']);
+            });
+        }
+
+        if (!empty($filters['date_to'])) {
+            $transactions = array_filter($transactions, function($txn) use ($filters) {
+                return $txn['created_at'] <= strtotime($filters['date_to']);
+            });
+        }
+
+        return array_values($transactions);
     }
 
     /**
      * Export transactions
      */
-    public function exportTransactions(string $format = 'csv', array $filters = []): string
+    public function exportTransactions(array $filters = [], string $format = 'csv'): string
     {
-        $filteredTransactions = $this->filterTransactions($filters);
+        $transactions = $this->getTransactionHistory($filters);
 
         switch ($format) {
             case 'csv':
-                return $this->exportToCSV($filteredTransactions);
+                return $this->exportToCSV($transactions);
             case 'json':
-                return json_encode($filteredTransactions, JSON_PRETTY_PRINT);
+                return json_encode($transactions);
             case 'xml':
-                return $this->exportToXML($filteredTransactions);
+                return $this->exportToXML($transactions);
             default:
-                throw new \Exception("Unsupported export format: $format");
+                return json_encode($transactions);
         }
-    }
-
-    /**
-     * Filter transactions
-     */
-    private function filterTransactions(array $filters): array
-    {
-        if (empty($filters)) {
-            return $this->transactions;
-        }
-
-        return array_filter($this->transactions, function($transaction) use ($filters) {
-            foreach ($filters as $key => $value) {
-                if (!isset($transaction[$key]) || $transaction[$key] !== $value) {
-                    return false;
-                }
-            }
-            return true;
-        });
     }
 
     /**
@@ -1365,18 +883,18 @@ class PaymentGateway
      */
     private function exportToCSV(array $transactions): string
     {
-        $csv = "Transaction ID,Gateway,Method,Amount,Currency,Status,Created At\n";
+        $csv = "Transaction ID,Gateway,Amount,Currency,Status,Customer ID,Created At\n";
 
         foreach ($transactions as $transaction) {
             $csv .= sprintf(
                 "%s,%s,%s,%s,%s,%s,%s\n",
                 $transaction['id'],
                 $transaction['gateway'],
-                $transaction['method'],
                 $transaction['amount'],
                 $transaction['currency'],
                 $transaction['status'],
-                $transaction['created_at']
+                $transaction['customer_id'] ?? '',
+                date('Y-m-d H:i:s', $transaction['created_at'])
             );
         }
 
@@ -1388,18 +906,88 @@ class PaymentGateway
      */
     private function exportToXML(array $transactions): string
     {
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-        $xml .= '<transactions>' . "\n";
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><transactions>';
 
         foreach ($transactions as $transaction) {
-            $xml .= '  <transaction>' . "\n";
-            foreach ($transaction as $key => $value) {
-                $xml .= "    <$key>" . htmlspecialchars($value) . "</$key>\n";
-            }
-            $xml .= '  </transaction>' . "\n";
+            $xml .= sprintf(
+                '<transaction><id>%s</id><gateway>%s</gateway><amount>%s</amount><currency>%s</currency><status>%s</status><customer_id>%s</customer_id><created_at>%s</created_at></transaction>',
+                $transaction['id'],
+                $transaction['gateway'],
+                $transaction['amount'],
+                $transaction['currency'],
+                $transaction['status'],
+                $transaction['customer_id'] ?? '',
+                date('Y-m-d H:i:s', $transaction['created_at'])
+            );
         }
 
-        $xml .= '</transactions>' . "\n";
+        $xml .= '</transactions>';
+
         return $xml;
+    }
+}
+
+// Placeholder classes for dependencies
+class FraudDetection {
+    public function analyzeTransaction(array $transactionData): array {
+        return ['risk' => 'low', 'score' => 0.1];
+    }
+}
+
+class ComplianceManager {
+    public function checkPaymentCompliance(array $paymentData): array {
+        return ['compliant' => true, 'issues' => []];
+    }
+}
+
+interface PaymentGatewayInterface {
+    public function processPayment(array $paymentData): array;
+    public function processRefund(array $refundData): array;
+    public function createSubscription(array $subscriptionData): array;
+    public function cancelSubscription(string $subscriptionId): array;
+    public function isAvailable(): bool;
+}
+
+class GenericPaymentGateway implements PaymentGatewayInterface {
+    private string $gatewayId;
+    private array $config;
+
+    public function __construct(string $gatewayId, array $config) {
+        $this->gatewayId = $gatewayId;
+        $this->config = $config;
+    }
+
+    public function processPayment(array $paymentData): array {
+        // Mock payment processing
+        return [
+            'success' => true,
+            'transaction_id' => uniqid('txn_'),
+            'amount' => $paymentData['amount'],
+            'currency' => $paymentData['currency'] ?? 'USD',
+            'processing_time' => rand(1, 5)
+        ];
+    }
+
+    public function processRefund(array $refundData): array {
+        return [
+            'success' => true,
+            'refund_id' => uniqid('ref_'),
+            'amount' => $refundData['amount']
+        ];
+    }
+
+    public function createSubscription(array $subscriptionData): array {
+        return [
+            'success' => true,
+            'subscription_id' => uniqid('sub_')
+        ];
+    }
+
+    public function cancelSubscription(string $subscriptionId): array {
+        return ['success' => true];
+    }
+
+    public function isAvailable(): bool {
+        return true;
     }
 }

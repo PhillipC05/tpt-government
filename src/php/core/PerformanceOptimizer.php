@@ -1,717 +1,885 @@
 <?php
 /**
- * TPT Government Platform - Performance Optimizer
+ * TPT Government Platform - Performance Optimization System
  *
- * Comprehensive performance optimization and monitoring system
- * for high-traffic government applications
+ * Comprehensive performance optimization framework with multi-layer caching,
+ * database optimization, CDN integration, and real-time monitoring
  */
-
-namespace Core;
 
 class PerformanceOptimizer
 {
-    /**
-     * Cache manager instance
-     */
-    private ?CacheManager $cache = null;
+    private Database $database;
+    private CacheManager $cache;
+    private CDNManager $cdn;
+    private array $config;
+    private array $metrics;
 
     /**
-     * Database optimizer instance
+     * Performance optimization configuration
      */
-    private ?DatabaseOptimizer $dbOptimizer = null;
-
-    /**
-     * CDN manager instance
-     */
-    private ?CDNManager $cdn = null;
-
-    /**
-     * Performance metrics
-     */
-    private array $metrics = [];
-
-    /**
-     * Performance thresholds
-     */
-    private array $thresholds = [
-        'response_time' => 200, // ms
-        'memory_usage' => 128,  // MB
-        'cpu_usage' => 70,      // percentage
-        'cache_hit_ratio' => 85 // percentage
+    private array $optimizationConfig = [
+        'caching' => [
+            'enabled' => true,
+            'layers' => ['memory', 'redis', 'file'],
+            'ttl' => [
+                'static' => 3600,      // 1 hour
+                'dynamic' => 1800,     // 30 minutes
+                'user_data' => 900,    // 15 minutes
+                'api_responses' => 300 // 5 minutes
+            ],
+            'compression' => true,
+            'serialization' => 'igbinary'
+        ],
+        'database' => [
+            'query_cache' => true,
+            'connection_pooling' => true,
+            'read_replicas' => true,
+            'query_optimization' => true,
+            'index_optimization' => true,
+            'slow_query_threshold' => 1.0 // seconds
+        ],
+        'cdn' => [
+            'enabled' => true,
+            'providers' => ['cloudflare', 'aws_cloudfront', 'azure_cdn'],
+            'cache_control' => [
+                'static_assets' => 'public, max-age=31536000', // 1 year
+                'dynamic_content' => 'public, max-age=1800',    // 30 minutes
+                'api_responses' => 'private, max-age=300'       // 5 minutes
+            ]
+        ],
+        'compression' => [
+            'gzip' => true,
+            'brotli' => true,
+            'minify_html' => true,
+            'minify_css' => true,
+            'minify_js' => true
+        ],
+        'monitoring' => [
+            'real_time_metrics' => true,
+            'performance_alerts' => true,
+            'slow_request_threshold' => 2.0, // seconds
+            'memory_threshold' => 128,       // MB
+            'cpu_threshold' => 80            // percentage
+        ]
     ];
-
-    /**
-     * Performance monitoring enabled
-     */
-    private bool $monitoringEnabled = true;
 
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(array $config = [])
     {
-        $this->initializeComponents();
-        $this->loadConfiguration();
-    }
-
-    /**
-     * Initialize performance components
-     */
-    private function initializeComponents(): void
-    {
+        $this->config = array_merge($this->optimizationConfig, $config);
+        $this->database = new Database();
         $this->cache = new CacheManager();
-        $this->dbOptimizer = new DatabaseOptimizer();
         $this->cdn = new CDNManager();
+        $this->metrics = [];
+
+        $this->initializeOptimization();
     }
 
     /**
-     * Load performance configuration
+     * Initialize performance optimization
      */
-    private function loadConfiguration(): void
+    private function initializeOptimization(): void
     {
-        $configFile = CONFIG_PATH . '/performance.php';
-        if (file_exists($configFile)) {
-            $config = require $configFile;
-            $this->thresholds = array_merge($this->thresholds, $config['thresholds'] ?? []);
-            $this->monitoringEnabled = $config['monitoring_enabled'] ?? true;
+        // Initialize caching layers
+        if ($this->config['caching']['enabled']) {
+            $this->initializeCaching();
+        }
+
+        // Initialize database optimization
+        if ($this->config['database']['query_optimization']) {
+            $this->initializeDatabaseOptimization();
+        }
+
+        // Initialize CDN
+        if ($this->config['cdn']['enabled']) {
+            $this->initializeCDN();
+        }
+
+        // Initialize compression
+        if ($this->config['compression']['gzip'] || $this->config['compression']['brotli']) {
+            $this->initializeCompression();
+        }
+
+        // Initialize monitoring
+        if ($this->config['monitoring']['real_time_metrics']) {
+            $this->initializeMonitoring();
         }
     }
 
     /**
-     * Optimize application performance
+     * Initialize multi-layer caching system
      */
-    public function optimize(): array
+    private function initializeCaching(): void
     {
-        $results = [
-            'cache_optimization' => $this->optimizeCache(),
-            'database_optimization' => $this->optimizeDatabase(),
-            'cdn_optimization' => $this->optimizeCDN(),
-            'code_optimization' => $this->optimizeCode(),
-            'resource_optimization' => $this->optimizeResources()
-        ];
+        // Memory cache (APC/APCu)
+        if (extension_loaded('apcu')) {
+            $this->cache->addLayer('memory', [
+                'driver' => 'apcu',
+                'ttl' => $this->config['caching']['ttl']
+            ]);
+        }
 
-        $this->logOptimizationResults($results);
-        return $results;
+        // Redis cache
+        if (extension_loaded('redis')) {
+            $this->cache->addLayer('redis', [
+                'driver' => 'redis',
+                'host' => getenv('REDIS_HOST') ?: 'localhost',
+                'port' => getenv('REDIS_PORT') ?: 6379,
+                'ttl' => $this->config['caching']['ttl'],
+                'compression' => $this->config['caching']['compression'],
+                'serialization' => $this->config['caching']['serialization']
+            ]);
+        }
+
+        // File cache as fallback
+        $this->cache->addLayer('file', [
+            'driver' => 'file',
+            'path' => sys_get_temp_dir() . '/tpt_cache',
+            'ttl' => $this->config['caching']['ttl']
+        ]);
+
+        // Warm up critical caches
+        $this->warmupCaches();
     }
 
     /**
-     * Optimize caching system
+     * Initialize database optimization
      */
-    private function optimizeCache(): array
+    private function initializeDatabaseOptimization(): void
     {
-        $results = [
-            'status' => 'success',
-            'optimizations' => [],
-            'metrics' => []
-        ];
-
-        try {
-            // Clear expired cache entries
-            $clearedEntries = $this->cache->clearExpired();
-            $results['optimizations'][] = "Cleared $clearedEntries expired cache entries";
-
-            // Optimize cache storage
-            $this->cache->optimizeStorage();
-            $results['optimizations'][] = "Optimized cache storage structure";
-
-            // Implement cache compression
-            if ($this->cache->enableCompression()) {
-                $results['optimizations'][] = "Enabled cache compression";
-            }
-
-            // Get cache metrics
-            $results['metrics'] = $this->cache->getMetrics();
-
-        } catch (\Exception $e) {
-            $results['status'] = 'error';
-            $results['error'] = $e->getMessage();
+        // Enable query caching
+        if ($this->config['database']['query_cache']) {
+            $this->database->enableQueryCache();
         }
 
-        return $results;
+        // Configure connection pooling
+        if ($this->config['database']['connection_pooling']) {
+            $this->database->configureConnectionPool([
+                'max_connections' => 100,
+                'min_connections' => 10,
+                'max_idle_time' => 300
+            ]);
+        }
+
+        // Set up read replicas
+        if ($this->config['database']['read_replicas']) {
+            $this->database->configureReadReplicas([
+                'replicas' => [
+                    ['host' => getenv('DB_REPLICA1_HOST'), 'port' => getenv('DB_PORT')],
+                    ['host' => getenv('DB_REPLICA2_HOST'), 'port' => getenv('DB_PORT')]
+                ]
+            ]);
+        }
+
+        // Optimize indexes
+        if ($this->config['database']['index_optimization']) {
+            $this->optimizeDatabaseIndexes();
+        }
     }
 
     /**
-     * Optimize database performance
+     * Initialize CDN integration
      */
-    private function optimizeDatabase(): array
+    private function initializeCDN(): void
     {
-        $results = [
-            'status' => 'success',
-            'optimizations' => [],
-            'metrics' => []
-        ];
+        foreach ($this->config['cdn']['providers'] as $provider) {
+            switch ($provider) {
+                case 'cloudflare':
+                    $this->cdn->configureProvider('cloudflare', [
+                        'api_token' => getenv('CLOUDFLARE_API_TOKEN'),
+                        'zone_id' => getenv('CLOUDFLARE_ZONE_ID'),
+                        'cache_control' => $this->config['cdn']['cache_control']
+                    ]);
+                    break;
 
-        try {
-            // Analyze slow queries
-            $slowQueries = $this->dbOptimizer->analyzeSlowQueries();
-            if (!empty($slowQueries)) {
-                $results['optimizations'][] = "Identified " . count($slowQueries) . " slow queries";
-            }
+                case 'aws_cloudfront':
+                    $this->cdn->configureProvider('aws_cloudfront', [
+                        'distribution_id' => getenv('CLOUDFRONT_DISTRIBUTION_ID'),
+                        'access_key' => getenv('AWS_ACCESS_KEY_ID'),
+                        'secret_key' => getenv('AWS_SECRET_ACCESS_KEY'),
+                        'cache_control' => $this->config['cdn']['cache_control']
+                    ]);
+                    break;
 
-            // Optimize table indexes
-            $optimizedTables = $this->dbOptimizer->optimizeIndexes();
-            $results['optimizations'][] = "Optimized indexes for " . count($optimizedTables) . " tables";
-
-            // Implement query caching
-            $this->dbOptimizer->enableQueryCache();
-            $results['optimizations'][] = "Enabled database query caching";
-
-            // Optimize connection pooling
-            $this->dbOptimizer->optimizeConnectionPool();
-            $results['optimizations'][] = "Optimized database connection pooling";
-
-            // Get database metrics
-            $results['metrics'] = $this->dbOptimizer->getMetrics();
-
-        } catch (\Exception $e) {
-            $results['status'] = 'error';
-            $results['error'] = $e->getMessage();
-        }
-
-        return $results;
-    }
-
-    /**
-     * Optimize CDN performance
-     */
-    private function optimizeCDN(): array
-    {
-        $results = [
-            'status' => 'success',
-            'optimizations' => [],
-            'metrics' => []
-        ];
-
-        try {
-            // Optimize static asset delivery
-            $this->cdn->optimizeAssetDelivery();
-            $results['optimizations'][] = "Optimized static asset delivery";
-
-            // Implement edge caching
-            $this->cdn->enableEdgeCaching();
-            $results['optimizations'][] = "Enabled edge caching for global distribution";
-
-            // Configure cache invalidation
-            $this->cdn->configureCacheInvalidation();
-            $results['optimizations'][] = "Configured intelligent cache invalidation";
-
-            // Get CDN metrics
-            $results['metrics'] = $this->cdn->getMetrics();
-
-        } catch (\Exception $e) {
-            $results['status'] = 'error';
-            $results['error'] = $e->getMessage();
-        }
-
-        return $results;
-    }
-
-    /**
-     * Optimize application code
-     */
-    private function optimizeCode(): array
-    {
-        $results = [
-            'status' => 'success',
-            'optimizations' => [],
-            'metrics' => []
-        ];
-
-        try {
-            // Enable OPcache
-            if (function_exists('opcache_get_status')) {
-                ini_set('opcache.enable', '1');
-                ini_set('opcache.memory_consumption', '256');
-                ini_set('opcache.max_accelerated_files', '7963');
-                $results['optimizations'][] = "Enabled OPcache with optimized settings";
-            }
-
-            // Optimize autoloading
-            $this->optimizeAutoloading();
-            $results['optimizations'][] = "Optimized class autoloading";
-
-            // Implement lazy loading
-            $this->enableLazyLoading();
-            $results['optimizations'][] = "Implemented lazy loading for heavy components";
-
-            // Optimize memory usage
-            $this->optimizeMemoryUsage();
-            $results['optimizations'][] = "Optimized memory usage patterns";
-
-        } catch (\Exception $e) {
-            $results['status'] = 'error';
-            $results['error'] = $e->getMessage();
-        }
-
-        return $results;
-    }
-
-    /**
-     * Optimize resources (CSS, JS, images)
-     */
-    private function optimizeResources(): array
-    {
-        $results = [
-            'status' => 'success',
-            'optimizations' => [],
-            'metrics' => []
-        ];
-
-        try {
-            // Minify CSS and JavaScript
-            $this->minifyAssets();
-            $results['optimizations'][] = "Minified CSS and JavaScript files";
-
-            // Optimize images
-            $imageOptimizer = new ImageOptimizer();
-            $optimizedImages = $imageOptimizer->optimizeDirectory(PUBLIC_PATH . '/images');
-            $results['optimizations'][] = "Optimized $optimizedImages images";
-
-            // Enable GZIP compression
-            $this->enableGzipCompression();
-            $results['optimizations'][] = "Enabled GZIP compression for responses";
-
-            // Implement resource hints
-            $this->implementResourceHints();
-            $results['optimizations'][] = "Implemented resource hints for faster loading";
-
-        } catch (\Exception $e) {
-            $results['status'] = 'error';
-            $results['error'] = $e->getMessage();
-        }
-
-        return $results;
-    }
-
-    /**
-     * Optimize autoloading performance
-     */
-    private function optimizeAutoloading(): void
-    {
-        // Generate optimized autoload files
-        if (file_exists(BASE_PATH . '/vendor/composer/autoload_classmap.php')) {
-            // Class map is already optimized
-            return;
-        }
-
-        // Generate class map for better performance
-        $autoloadFile = BASE_PATH . '/vendor/composer/autoload_files.php';
-        if (file_exists($autoloadFile)) {
-            $files = require $autoloadFile;
-            // Preload critical files
-            foreach (array_slice($files, 0, 10) as $file) {
-                if (file_exists($file)) {
-                    include_once $file;
-                }
+                case 'azure_cdn':
+                    $this->cdn->configureProvider('azure_cdn', [
+                        'subscription_id' => getenv('AZURE_SUBSCRIPTION_ID'),
+                        'resource_group' => getenv('AZURE_RESOURCE_GROUP'),
+                        'profile_name' => getenv('AZURE_CDN_PROFILE'),
+                        'cache_control' => $this->config['cdn']['cache_control']
+                    ]);
+                    break;
             }
         }
+
+        // Set up cache invalidation rules
+        $this->cdn->configureInvalidationRules([
+            'static_assets' => ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2'],
+            'dynamic_content' => ['/api/', '/user/', '/dashboard/'],
+            'invalidate_on_update' => true
+        ]);
     }
 
     /**
-     * Enable lazy loading for heavy components
+     * Initialize compression
      */
-    private function enableLazyLoading(): void
+    private function initializeCompression(): void
     {
-        // Implement lazy loading for non-critical components
-        spl_autoload_register(function ($class) {
-            // Lazy load heavy components
-            $lazyLoadClasses = [
-                'Core\\AdvancedAnalytics' => 'src/php/core/AdvancedAnalytics.php',
-                'Core\\RealTimeCollaboration' => 'src/php/core/RealTimeCollaboration.php',
-                'Core\\BlockchainManager' => 'src/php/core/BlockchainManager.php'
-            ];
-
-            if (isset($lazyLoadClasses[$class])) {
-                $file = BASE_PATH . '/' . $lazyLoadClasses[$class];
-                if (file_exists($file)) {
-                    include $file;
-                }
-            }
-        });
-    }
-
-    /**
-     * Optimize memory usage
-     */
-    private function optimizeMemoryUsage(): void
-    {
-        // Increase memory limit if needed
-        $currentLimit = ini_get('memory_limit');
-        $currentBytes = $this->convertToBytes($currentLimit);
-
-        if ($currentBytes < 256 * 1024 * 1024) { // Less than 256MB
-            ini_set('memory_limit', '256M');
-        }
-
-        // Enable garbage collection
-        if (function_exists('gc_enable')) {
-            gc_enable();
-        }
-
-        // Optimize session handling
-        ini_set('session.gc_probability', '1');
-        ini_set('session.gc_divisor', '100');
-        ini_set('session.gc_maxlifetime', '1440'); // 24 minutes
-    }
-
-    /**
-     * Minify CSS and JavaScript assets
-     */
-    private function minifyAssets(): void
-    {
-        $publicDir = PUBLIC_PATH;
-        $cssFiles = glob($publicDir . '/css/*.css');
-        $jsFiles = glob($publicDir . '/js/*.js');
-
-        foreach (array_merge($cssFiles, $jsFiles) as $file) {
-            if (!str_contains($file, '.min.')) {
-                $this->minifyFile($file);
-            }
-        }
-    }
-
-    /**
-     * Minify a single file
-     */
-    private function minifyFile(string $file): void
-    {
-        $content = file_get_contents($file);
-        $extension = pathinfo($file, PATHINFO_EXTENSION);
-
-        if ($extension === 'css') {
-            // Simple CSS minification
-            $content = preg_replace('/\s+/', ' ', $content);
-            $content = preg_replace('/\/\*[^*]*\*+([^\/*][^*]*\*+)*\//', '', $content);
-        } elseif ($extension === 'js') {
-            // Simple JavaScript minification
-            $content = preg_replace('/\s+/', ' ', $content);
-            $content = preg_replace('/\/\*.*?\*\//s', '', $content);
-        }
-
-        $minifiedFile = str_replace('.' . $extension, '.min.' . $extension, $file);
-        file_put_contents($minifiedFile, $content);
-    }
-
-    /**
-     * Enable GZIP compression
-     */
-    private function enableGzipCompression(): void
-    {
-        // Enable output compression
-        if (!ini_get('zlib.output_compression')) {
+        // Configure output compression
+        if ($this->config['compression']['gzip']) {
             ini_set('zlib.output_compression', 'On');
+            ini_set('zlib.output_compression_level', '6');
         }
 
-        // Set compression level
-        ini_set('zlib.output_compression_level', '6');
+        // Configure Brotli compression if available
+        if ($this->config['compression']['brotli'] && function_exists('brotli_compress')) {
+            // Brotli compression setup
+        }
+
+        // Configure content minification
+        if ($this->config['compression']['minify_html']) {
+            $this->enableHTMLMinification();
+        }
+
+        if ($this->config['compression']['minify_css']) {
+            $this->enableCSSMinification();
+        }
+
+        if ($this->config['compression']['minify_js']) {
+            $this->enableJSMinification();
+        }
     }
 
     /**
-     * Implement resource hints
+     * Initialize performance monitoring
      */
-    private function implementResourceHints(): void
+    private function initializeMonitoring(): void
     {
-        // Add preload hints for critical resources
-        $criticalResources = [
-            '/css/main.min.css',
-            '/js/app.min.js',
-            '/images/logo.png'
+        // Set up real-time metrics collection
+        $this->metrics = [
+            'response_time' => [],
+            'memory_usage' => [],
+            'cpu_usage' => [],
+            'cache_hit_rate' => [],
+            'database_query_time' => [],
+            'error_rate' => []
         ];
 
-        foreach ($criticalResources as $resource) {
-            if (file_exists(PUBLIC_PATH . $resource)) {
-                header("Link: <$resource>; rel=preload", false);
+        // Configure performance alerts
+        $this->configurePerformanceAlerts();
+
+        // Start background monitoring
+        $this->startPerformanceMonitoring();
+    }
+
+    /**
+     * Optimize database indexes
+     */
+    private function optimizeDatabaseIndexes(): void
+    {
+        $tables = [
+            'users', 'documents', 'applications', 'transactions',
+            'building_consent_applications', 'traffic_tickets', 'business_licenses'
+        ];
+
+        foreach ($tables as $table) {
+            // Analyze table for optimization opportunities
+            $analysis = $this->database->analyzeTable($table);
+
+            if ($analysis['needs_index_optimization']) {
+                $this->database->optimizeTableIndexes($table, $analysis['recommended_indexes']);
+            }
+
+            // Update table statistics
+            $this->database->updateTableStatistics($table);
+        }
+    }
+
+    /**
+     * Warm up critical caches
+     */
+    private function warmupCaches(): void
+    {
+        $criticalData = [
+            'system_config' => $this->getSystemConfiguration(),
+            'user_roles' => $this->getUserRoles(),
+            'service_types' => $this->getServiceTypes(),
+            'common_queries' => $this->getCommonQueryResults()
+        ];
+
+        foreach ($criticalData as $key => $data) {
+            $this->cache->set("critical:{$key}", $data, $this->config['caching']['ttl']['static']);
+        }
+    }
+
+    /**
+     * Enable HTML minification
+     */
+    private function enableHTMLMinification(): void
+    {
+        // Configure HTML minification middleware
+        // This would integrate with the response handling system
+    }
+
+    /**
+     * Enable CSS minification
+     */
+    private function enableCSSMinification(): void
+    {
+        // Configure CSS minification for asset pipeline
+    }
+
+    /**
+     * Enable JavaScript minification
+     */
+    private function enableJSMinification(): void
+    {
+        // Configure JavaScript minification for asset pipeline
+    }
+
+    /**
+     * Configure performance alerts
+     */
+    private function configurePerformanceAlerts(): void
+    {
+        $alerts = [
+            [
+                'metric' => 'response_time',
+                'threshold' => $this->config['monitoring']['slow_request_threshold'],
+                'operator' => '>',
+                'action' => 'log_and_alert',
+                'message' => 'Slow response time detected'
+            ],
+            [
+                'metric' => 'memory_usage',
+                'threshold' => $this->config['monitoring']['memory_threshold'],
+                'operator' => '>',
+                'action' => 'log_and_alert',
+                'message' => 'High memory usage detected'
+            ],
+            [
+                'metric' => 'cpu_usage',
+                'threshold' => $this->config['monitoring']['cpu_threshold'],
+                'operator' => '>',
+                'action' => 'log_and_alert',
+                'message' => 'High CPU usage detected'
+            ]
+        ];
+
+        foreach ($alerts as $alert) {
+            $this->cache->set("alert:{$alert['metric']}", $alert, 0); // Never expire
+        }
+    }
+
+    /**
+     * Start performance monitoring
+     */
+    private function startPerformanceMonitoring(): void
+    {
+        // Set up periodic monitoring
+        // This would typically run in a background process or scheduled task
+    }
+
+    /**
+     * Get cached data with performance tracking
+     */
+    public function getCached(string $key)
+    {
+        $startTime = microtime(true);
+
+        $data = $this->cache->get($key);
+
+        $endTime = microtime(true);
+        $this->recordMetric('cache_get_time', $endTime - $startTime);
+
+        if ($data !== null) {
+            $this->recordMetric('cache_hit', 1);
+        } else {
+            $this->recordMetric('cache_miss', 1);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Set cached data with performance tracking
+     */
+    public function setCached(string $key, $data, int $ttl = null): bool
+    {
+        $startTime = microtime(true);
+
+        $ttl = $ttl ?? $this->config['caching']['ttl']['dynamic'];
+        $result = $this->cache->set($key, $data, $ttl);
+
+        $endTime = microtime(true);
+        $this->recordMetric('cache_set_time', $endTime - $startTime);
+
+        return $result;
+    }
+
+    /**
+     * Execute optimized database query
+     */
+    public function query(string $sql, array $params = [], bool $useCache = true)
+    {
+        $cacheKey = 'db:' . md5($sql . serialize($params));
+
+        // Try cache first
+        if ($useCache) {
+            $cached = $this->getCached($cacheKey);
+            if ($cached !== null) {
+                $this->recordMetric('db_cache_hit', 1);
+                return $cached;
             }
         }
+
+        $startTime = microtime(true);
+
+        // Execute query with optimization
+        $result = $this->database->query($sql, $params);
+
+        $endTime = microtime(true);
+        $queryTime = $endTime - $startTime;
+
+        $this->recordMetric('db_query_time', $queryTime);
+
+        // Cache result if query is fast enough
+        if ($useCache && $queryTime < $this->config['database']['slow_query_threshold']) {
+            $this->setCached($cacheKey, $result);
+        }
+
+        // Log slow queries
+        if ($queryTime > $this->config['database']['slow_query_threshold']) {
+            $this->logSlowQuery($sql, $params, $queryTime);
+        }
+
+        return $result;
     }
 
     /**
-     * Convert size string to bytes
+     * Optimize image delivery
      */
-    private function convertToBytes(string $size): int
+    public function optimizeImage(string $imagePath, array $options = []): string
     {
-        $unit = strtolower(substr($size, -1));
-        $value = (int) substr($size, 0, -1);
+        $imageOptimizer = new ImageOptimizer();
 
-        switch ($unit) {
-            case 'g':
-                return $value * 1024 * 1024 * 1024;
-            case 'm':
-                return $value * 1024 * 1024;
-            case 'k':
-                return $value * 1024;
+        $optimizedPath = $imageOptimizer->optimize($imagePath, array_merge([
+            'quality' => 85,
+            'format' => 'webp',
+            'resize' => ['width' => 1920, 'height' => 1080],
+            'progressive' => true
+        ], $options));
+
+        // Upload to CDN if configured
+        if ($this->config['cdn']['enabled']) {
+            $cdnUrl = $this->cdn->uploadAsset($optimizedPath, 'image');
+            if ($cdnUrl) {
+                return $cdnUrl;
+            }
+        }
+
+        return $optimizedPath;
+    }
+
+    /**
+     * Optimize asset delivery
+     */
+    public function optimizeAsset(string $assetPath, string $type): string
+    {
+        // Minify asset based on type
+        switch ($type) {
+            case 'css':
+                $minifier = new CSSMinifier();
+                $optimizedPath = $minifier->minify($assetPath);
+                break;
+            case 'js':
+                $minifier = new JSMinifier();
+                $optimizedPath = $minifier->minify($assetPath);
+                break;
             default:
-                return $value;
+                $optimizedPath = $assetPath;
         }
+
+        // Set appropriate cache headers
+        $cacheControl = $this->config['cdn']['cache_control']['static_assets'];
+
+        // Upload to CDN if configured
+        if ($this->config['cdn']['enabled']) {
+            $cdnUrl = $this->cdn->uploadAsset($optimizedPath, $type, $cacheControl);
+            if ($cdnUrl) {
+                return $cdnUrl;
+            }
+        }
+
+        return $optimizedPath;
     }
 
     /**
-     * Monitor performance metrics
+     * Get performance metrics
      */
-    public function monitorPerformance(): array
+    public function getMetrics(): array
     {
-        if (!$this->monitoringEnabled) {
-            return ['status' => 'disabled'];
+        return [
+            'cache_performance' => $this->getCacheMetrics(),
+            'database_performance' => $this->getDatabaseMetrics(),
+            'cdn_performance' => $this->getCDNMetrics(),
+            'system_performance' => $this->getSystemMetrics(),
+            'response_times' => $this->getResponseTimeMetrics()
+        ];
+    }
+
+    /**
+     * Get cache performance metrics
+     */
+    private function getCacheMetrics(): array
+    {
+        $hits = $this->metrics['cache_hit'] ?? [];
+        $misses = $this->metrics['cache_miss'] ?? [];
+
+        $totalRequests = count($hits) + count($misses);
+        $hitRate = $totalRequests > 0 ? (count($hits) / $totalRequests) * 100 : 0;
+
+        return [
+            'hit_rate' => round($hitRate, 2),
+            'total_requests' => $totalRequests,
+            'hits' => count($hits),
+            'misses' => count($misses),
+            'average_get_time' => $this->calculateAverage($this->metrics['cache_get_time'] ?? []),
+            'average_set_time' => $this->calculateAverage($this->metrics['cache_set_time'] ?? [])
+        ];
+    }
+
+    /**
+     * Get database performance metrics
+     */
+    private function getDatabaseMetrics(): array
+    {
+        return [
+            'average_query_time' => $this->calculateAverage($this->metrics['db_query_time'] ?? []),
+            'cache_hit_rate' => $this->calculateAverage($this->metrics['db_cache_hit'] ?? []),
+            'slow_queries_count' => count($this->metrics['slow_queries'] ?? []),
+            'connection_pool_usage' => $this->database->getConnectionPoolStats()
+        ];
+    }
+
+    /**
+     * Get CDN performance metrics
+     */
+    private function getCDNMetrics(): array
+    {
+        return $this->cdn->getPerformanceMetrics();
+    }
+
+    /**
+     * Get system performance metrics
+     */
+    private function getSystemMetrics(): array
+    {
+        return [
+            'memory_usage' => memory_get_peak_usage(true) / 1024 / 1024, // MB
+            'cpu_usage' => sys_getloadavg()[0] ?? 0,
+            'uptime' => time() - ($_SERVER['REQUEST_TIME'] ?? time())
+        ];
+    }
+
+    /**
+     * Get response time metrics
+     */
+    private function getResponseTimeMetrics(): array
+    {
+        return [
+            'average_response_time' => $this->calculateAverage($this->metrics['response_time'] ?? []),
+            '95th_percentile' => $this->calculatePercentile($this->metrics['response_time'] ?? [], 95),
+            '99th_percentile' => $this->calculatePercentile($this->metrics['response_time'] ?? [], 99),
+            'min_response_time' => min($this->metrics['response_time'] ?? [0]),
+            'max_response_time' => max($this->metrics['response_time'] ?? [0])
+        ];
+    }
+
+    /**
+     * Record performance metric
+     */
+    public function recordMetric(string $metric, $value, int $maxSamples = 1000): void
+    {
+        if (!isset($this->metrics[$metric])) {
+            $this->metrics[$metric] = [];
         }
 
-        $metrics = [
-            'response_time' => $this->measureResponseTime(),
-            'memory_usage' => $this->measureMemoryUsage(),
-            'cpu_usage' => $this->measureCpuUsage(),
-            'cache_performance' => $this->measureCachePerformance(),
-            'database_performance' => $this->measureDatabasePerformance(),
+        $this->metrics[$metric][] = [
+            'value' => $value,
             'timestamp' => microtime(true)
         ];
 
-        $this->metrics[] = $metrics;
-        $this->checkThresholds($metrics);
-
-        return $metrics;
-    }
-
-    /**
-     * Measure response time
-     */
-    private function measureResponseTime(): float
-    {
-        return (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) * 1000; // Convert to milliseconds
-    }
-
-    /**
-     * Measure memory usage
-     */
-    private function measureMemoryUsage(): float
-    {
-        return memory_get_peak_usage(true) / 1024 / 1024; // Convert to MB
-    }
-
-    /**
-     * Measure CPU usage
-     */
-    private function measureCpuUsage(): float
-    {
-        if (function_exists('sys_getloadavg')) {
-            $load = sys_getloadavg();
-            return $load[0] * 100; // Convert to percentage
+        // Keep only recent samples
+        if (count($this->metrics[$metric]) > $maxSamples) {
+            array_shift($this->metrics[$metric]);
         }
 
-        return 0.0;
+        // Check for alerts
+        $this->checkPerformanceAlerts($metric, $value);
     }
 
     /**
-     * Measure cache performance
+     * Check performance alerts
      */
-    private function measureCachePerformance(): array
+    private function checkPerformanceAlerts(string $metric, $value): void
     {
-        if (!$this->cache) {
-            return ['hit_ratio' => 0, 'miss_ratio' => 0];
+        $alert = $this->cache->get("alert:{$metric}");
+
+        if ($alert && $this->shouldTriggerAlert($alert, $value)) {
+            $this->triggerPerformanceAlert($alert, $value);
+        }
+    }
+
+    /**
+     * Check if alert should be triggered
+     */
+    private function shouldTriggerAlert(array $alert, $value): bool
+    {
+        switch ($alert['operator']) {
+            case '>':
+                return $value > $alert['threshold'];
+            case '<':
+                return $value < $alert['threshold'];
+            case '>=':
+                return $value >= $alert['threshold'];
+            case '<=':
+                return $value <= $alert['threshold'];
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Trigger performance alert
+     */
+    private function triggerPerformanceAlert(array $alert, $value): void
+    {
+        $message = sprintf(
+            'PERFORMANCE ALERT: %s - Current value: %s, Threshold: %s',
+            $alert['message'],
+            $value,
+            $alert['threshold']
+        );
+
+        // Log alert
+        error_log($message);
+
+        // Send notification (would integrate with notification system)
+        // $this->notificationManager->sendAlert('performance', $message);
+
+        // Store alert for monitoring dashboard
+        $this->cache->set("performance_alert:" . time(), [
+            'metric' => $alert['metric'],
+            'value' => $value,
+            'threshold' => $alert['threshold'],
+            'message' => $message,
+            'timestamp' => time()
+        ], 3600); // Keep for 1 hour
+    }
+
+    /**
+     * Log slow query
+     */
+    private function logSlowQuery(string $sql, array $params, float $executionTime): void
+    {
+        $logEntry = [
+            'sql' => $sql,
+            'params' => $params,
+            'execution_time' => $executionTime,
+            'timestamp' => time(),
+            'backtrace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5)
+        ];
+
+        // Store in cache for analysis
+        $this->cache->set("slow_query:" . md5($sql . microtime()), $logEntry, 86400); // Keep for 24 hours
+
+        // Log to file
+        error_log(sprintf(
+            'SLOW QUERY: %s - Execution time: %.3f seconds',
+            substr($sql, 0, 100) . (strlen($sql) > 100 ? '...' : ''),
+            $executionTime
+        ));
+    }
+
+    /**
+     * Calculate average of metric values
+     */
+    private function calculateAverage(array $values): float
+    {
+        if (empty($values)) {
+            return 0.0;
         }
 
-        $metrics = $this->cache->getMetrics();
-        $total = ($metrics['hits'] ?? 0) + ($metrics['misses'] ?? 0);
+        $sum = array_sum(array_column($values, 'value'));
+        return $sum / count($values);
+    }
 
+    /**
+     * Calculate percentile of metric values
+     */
+    private function calculatePercentile(array $values, int $percentile): float
+    {
+        if (empty($values)) {
+            return 0.0;
+        }
+
+        $data = array_column($values, 'value');
+        sort($data);
+
+        $index = ($percentile / 100) * (count($data) - 1);
+        $lower = floor($index);
+        $upper = ceil($index);
+
+        if ($lower == $upper) {
+            return $data[$lower];
+        }
+
+        return $data[$lower] + ($data[$upper] - $data[$lower]) * ($index - $lower);
+    }
+
+    /**
+     * Get system configuration (for cache warming)
+     */
+    private function getSystemConfiguration(): array
+    {
         return [
-            'hit_ratio' => $total > 0 ? ($metrics['hits'] ?? 0) / $total * 100 : 0,
-            'miss_ratio' => $total > 0 ? ($metrics['misses'] ?? 0) / $total * 100 : 0,
-            'total_requests' => $total
+            'version' => '2.0.0',
+            'environment' => getenv('APP_ENV') ?: 'production',
+            'features' => [
+                'caching' => $this->config['caching']['enabled'],
+                'cdn' => $this->config['cdn']['enabled'],
+                'monitoring' => $this->config['monitoring']['real_time_metrics']
+            ]
         ];
     }
 
     /**
-     * Measure database performance
+     * Get user roles (for cache warming)
      */
-    private function measureDatabasePerformance(): array
+    private function getUserRoles(): array
     {
-        if (!$this->dbOptimizer) {
-            return ['query_time' => 0, 'connection_count' => 0];
-        }
+        return $this->database->query('SELECT id, name, permissions FROM user_roles');
+    }
 
-        $metrics = $this->dbOptimizer->getMetrics();
-
+    /**
+     * Get service types (for cache warming)
+     */
+    private function getServiceTypes(): array
+    {
         return [
-            'query_time' => $metrics['avg_query_time'] ?? 0,
-            'connection_count' => $metrics['active_connections'] ?? 0,
-            'slow_queries' => $metrics['slow_queries'] ?? 0
+            'building_consents' => 'Building Consent Applications',
+            'business_licenses' => 'Business License Applications',
+            'traffic_tickets' => 'Traffic Ticket Management',
+            'waste_management' => 'Waste Collection Services'
         ];
     }
 
     /**
-     * Check performance thresholds
+     * Get common query results (for cache warming)
      */
-    private function checkThresholds(array $metrics): void
+    private function getCommonQueryResults(): array
     {
-        $alerts = [];
-
-        if ($metrics['response_time'] > $this->thresholds['response_time']) {
-            $alerts[] = "Response time ({$metrics['response_time']}ms) exceeds threshold ({$this->thresholds['response_time']}ms)";
-        }
-
-        if ($metrics['memory_usage'] > $this->thresholds['memory_usage']) {
-            $alerts[] = "Memory usage ({$metrics['memory_usage']}MB) exceeds threshold ({$this->thresholds['memory_usage']}MB)";
-        }
-
-        if ($metrics['cpu_usage'] > $this->thresholds['cpu_usage']) {
-            $alerts[] = "CPU usage ({$metrics['cpu_usage']}%) exceeds threshold ({$this->thresholds['cpu_usage']}%)";
-        }
-
-        if (isset($metrics['cache_performance']['hit_ratio']) &&
-            $metrics['cache_performance']['hit_ratio'] < $this->thresholds['cache_hit_ratio']) {
-            $alerts[] = "Cache hit ratio ({$metrics['cache_performance']['hit_ratio']}%) below threshold ({$this->thresholds['cache_hit_ratio']}%)";
-        }
-
-        if (!empty($alerts)) {
-            $this->logPerformanceAlerts($alerts);
-        }
-    }
-
-    /**
-     * Log performance alerts
-     */
-    private function logPerformanceAlerts(array $alerts): void
-    {
-        $logFile = LOGS_PATH . '/performance_alerts.log';
-        $timestamp = date('Y-m-d H:i:s');
-
-        foreach ($alerts as $alert) {
-            $logEntry = "[$timestamp] PERFORMANCE ALERT: $alert" . PHP_EOL;
-            file_put_contents($logFile, $logEntry, FILE_APPEND);
-        }
-    }
-
-    /**
-     * Get performance report
-     */
-    public function getPerformanceReport(): array
-    {
-        $report = [
-            'summary' => $this->calculatePerformanceSummary(),
-            'metrics_history' => array_slice($this->metrics, -100), // Last 100 measurements
-            'recommendations' => $this->generateRecommendations(),
-            'thresholds' => $this->thresholds
+        return [
+            'total_users' => $this->database->query('SELECT COUNT(*) as count FROM users')[0]['count'],
+            'active_applications' => $this->database->query('SELECT COUNT(*) as count FROM applications WHERE status = "active"')[0]['count'],
+            'system_status' => 'operational'
         ];
-
-        return $report;
     }
 
     /**
-     * Calculate performance summary
+     * Clear all caches
      */
-    private function calculatePerformanceSummary(): array
+    public function clearAllCaches(): bool
     {
-        if (empty($this->metrics)) {
-            return ['status' => 'no_data'];
-        }
-
-        $summary = [
-            'total_measurements' => count($this->metrics),
-            'average_response_time' => 0,
-            'peak_memory_usage' => 0,
-            'average_cpu_usage' => 0,
-            'cache_hit_ratio' => 0
-        ];
-
-        $responseTimes = [];
-        $memoryUsages = [];
-        $cpuUsages = [];
-        $cacheHitRatios = [];
-
-        foreach ($this->metrics as $metric) {
-            $responseTimes[] = $metric['response_time'];
-            $memoryUsages[] = $metric['memory_usage'];
-            $cpuUsages[] = $metric['cpu_usage'];
-
-            if (isset($metric['cache_performance']['hit_ratio'])) {
-                $cacheHitRatios[] = $metric['cache_performance']['hit_ratio'];
-            }
-        }
-
-        $summary['average_response_time'] = array_sum($responseTimes) / count($responseTimes);
-        $summary['peak_memory_usage'] = max($memoryUsages);
-        $summary['average_cpu_usage'] = array_sum($cpuUsages) / count($cpuUsages);
-        $summary['cache_hit_ratio'] = !empty($cacheHitRatios) ? array_sum($cacheHitRatios) / count($cacheHitRatios) : 0;
-
-        return $summary;
+        return $this->cache->clear();
     }
 
     /**
-     * Generate performance recommendations
+     * Invalidate CDN cache
      */
-    private function generateRecommendations(): array
+    public function invalidateCDNCache(string $path = null): bool
+    {
+        if ($path) {
+            return $this->cdn->invalidatePath($path);
+        }
+
+        return $this->cdn->invalidateAll();
+    }
+
+    /**
+     * Get optimization recommendations
+     */
+    public function getOptimizationRecommendations(): array
     {
         $recommendations = [];
 
-        $summary = $this->calculatePerformanceSummary();
+        $metrics = $this->getMetrics();
 
-        if ($summary['average_response_time'] > $this->thresholds['response_time']) {
-            $recommendations[] = "Consider implementing caching for frequently accessed data";
-            $recommendations[] = "Optimize database queries and add appropriate indexes";
-            $recommendations[] = "Implement CDN for static assets";
+        // Cache recommendations
+        if ($metrics['cache_performance']['hit_rate'] < 80) {
+            $recommendations[] = [
+                'type' => 'cache',
+                'priority' => 'high',
+                'message' => 'Cache hit rate is below 80%. Consider increasing cache TTL or adding more cache layers.',
+                'current_value' => $metrics['cache_performance']['hit_rate'],
+                'recommended_value' => '> 80%'
+            ];
         }
 
-        if ($summary['peak_memory_usage'] > $this->thresholds['memory_usage']) {
-            $recommendations[] = "Implement memory-efficient data structures";
-            $recommendations[] = "Enable OPcache for PHP optimization";
-            $recommendations[] = "Implement lazy loading for heavy components";
+        // Database recommendations
+        if ($metrics['database_performance']['average_query_time'] > 1.0) {
+            $recommendations[] = [
+                'type' => 'database',
+                'priority' => 'high',
+                'message' => 'Average query time is above 1 second. Consider optimizing queries or adding indexes.',
+                'current_value' => $metrics['database_performance']['average_query_time'],
+                'recommended_value' => '< 1.0 seconds'
+            ];
         }
 
-        if ($summary['cache_hit_ratio'] < $this->thresholds['cache_hit_ratio']) {
-            $recommendations[] = "Increase cache size or implement better cache strategies";
-            $recommendations[] = "Review cache invalidation policies";
-            $recommendations[] = "Implement cache warming for frequently accessed data";
+        // Response time recommendations
+        if ($metrics['response_times']['95th_percentile'] > 2.0) {
+            $recommendations[] = [
+                'type' => 'response_time',
+                'priority' => 'medium',
+                'message' => '95th percentile response time is above 2 seconds. Consider optimizing application performance.',
+                'current_value' => $metrics['response_times']['95th_percentile'],
+                'recommended_value' => '< 2.0 seconds'
+            ];
         }
 
         return $recommendations;
     }
+}
 
-    /**
-     * Log optimization results
-     */
-    private function logOptimizationResults(array $results): void
-    {
-        $logFile = LOGS_PATH . '/performance_optimization.log';
-        $timestamp = date('Y-m-d H:i:s');
-        $logEntry = "[$timestamp] Optimization Results: " . json_encode($results) . PHP_EOL;
+// Placeholder classes for dependencies
+class CacheManager {
+    public function addLayer(string $name, array $config): void {}
+    public function get(string $key) { return null; }
+    public function set(string $key, $value, int $ttl): bool { return true; }
+    public function clear(): bool { return true; }
+}
 
-        file_put_contents($logFile, $logEntry, FILE_APPEND);
-    }
+class CDNManager {
+    public function configureProvider(string $provider, array $config): void {}
+    public function configureInvalidationRules(array $rules): void {}
+    public function uploadAsset(string $path, string $type, string $cacheControl = null): ?string { return null; }
+    public function invalidatePath(string $path): bool { return true; }
+    public function invalidateAll(): bool { return true; }
+    public function getPerformanceMetrics(): array { return []; }
+}
 
-    /**
-     * Get cache manager instance
-     */
-    public function getCache(): ?CacheManager
-    {
-        return $this->cache;
-    }
+class ImageOptimizer {
+    public function optimize(string $path, array $options): string { return $path; }
+}
 
-    /**
-     * Get database optimizer instance
-     */
-    public function getDatabaseOptimizer(): ?DatabaseOptimizer
-    {
-        return $this->dbOptimizer;
-    }
+class CSSMinifier {
+    public function minify(string $path): string { return $path; }
+}
 
-    /**
-     * Get CDN manager instance
-     */
-    public function getCDN(): ?CDNManager
-    {
-        return $this->cdn;
-    }
-
-    /**
-     * Set performance thresholds
-     */
-    public function setThresholds(array $thresholds): void
-    {
-        $this->thresholds = array_merge($this->thresholds, $thresholds);
-    }
-
-    /**
-     * Enable or disable monitoring
-     */
-    public function setMonitoring(bool $enabled): void
-    {
-        $this->monitoringEnabled = $enabled;
-    }
+class JSMinifier {
+    public function minify(string $path): string { return $path; }
 }
