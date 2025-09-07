@@ -1,0 +1,209 @@
+{
+  "target": {
+    "baseUrl": "http://localhost:3000",
+    "pages": [
+      "/",
+      "/login",
+      "/dashboard",
+      "/services",
+      "/profile",
+      "/admin"
+    ],
+    "apiEndpoints": [
+      "/api/health",
+      "/api/info",
+      "/api/services"
+    ],
+    "excludedSelectors": [
+      ".sr-only",
+      ".visually-hidden",
+      "[aria-hidden='true']",
+      ".skip-link"
+    ]
+  },
+  "standards": {
+    "wcagVersion": "2.1",
+    "conformanceLevel": "AA",
+    "guidelines": [
+      "1.1.1",
+      "1.3.1",
+      "1.3.2",
+      "1.4.1",
+      "1.4.3",
+      "1.4.4",
+      "1.4.10",
+      "1.4.11",
+      "1.4.12",
+      "1.4.13",
+      "2.1.1",
+      "2.1.2",
+      "2.1.4",
+      "2.2.1",
+      "2.2.2",
+      "2.3.1",
+      "2.4.1",
+      "2.4.2",
+      "2.4.3",
+      "2.4.4",
+      "2.4.6",
+      "2.4.7",
+      "2.5.1",
+      "2.5.2",
+      "2.5.3",
+      "3.1.1",
+      "3.1.2",
+      "3.2.1",
+      "3.2.2",
+      "3.2.3",
+      "3.2.4",
+      "3.3.1",
+      "3.3.2",
+      "3.3.3",
+      "3.3.4",
+      "4.1.1",
+      "4.1.2",
+      "4.1.3"
+    ]
+  },
+  "rules": {
+    "enabled": [
+      "area-alt",
+      "aria-allowed-attr",
+      "aria-allowed-role",
+      "aria-busy",
+      "aria-describedby",
+      "aria-expanded",
+      "aria-haspopup",
+      "aria-hidden",
+      "aria-invalid",
+      "aria-label",
+      "aria-labelledby",
+      "aria-live",
+      "aria-required-attr",
+      "aria-required-children",
+      "aria-required-parent",
+      "aria-roledescription",
+      "aria-roles",
+      "aria-valid-attr-value",
+      "aria-valid-attr",
+      "audio-caption",
+      "autocomplete-valid",
+      "avoid-inline-spacing",
+      "blink",
+      "button-name",
+      "bypass",
+      "color-contrast",
+      "css-orientation-lock",
+      "definition-list",
+      "dlitem",
+      "document-title",
+      "duplicate-id-active",
+      "duplicate-id-aria",
+      "duplicate-id",
+      "empty-heading",
+      "focus-order-semantics",
+      "form-field-multiple-labels",
+      "frame-focusable-content",
+      "frame-title-unique",
+      "frame-title",
+      "heading-order",
+      "hidden-content",
+      "html-has-lang",
+      "html-lang-valid",
+      "html-xml-lang-mismatch",
+      "image-alt",
+      "image-redundant-alt",
+      "input-button-name",
+      "input-image-alt",
+      "label-content-name-mismatch",
+      "label-title-only",
+      "label",
+      "landmark-banner-is-top-level",
+      "landmark-complementary-is-top-level",
+      "landmark-contentinfo-is-top-level",
+      "landmark-main-is-top-level",
+      "landmark-no-duplicate-banner",
+      "landmark-no-duplicate-contentinfo",
+      "landmark-no-duplicate-main",
+      "landmark-one-main",
+      "landmark-unique",
+      "link-in-text-block",
+      "link-name",
+      "list",
+      "listitem",
+      "marquee",
+      "meta-refresh",
+      "meta-viewport",
+      "nested-interactive",
+      "no-autoplay-audio",
+      "object-alt",
+      "p-as-heading",
+      "page-has-heading-one",
+      "presentation-role-conflict",
+      "region",
+      "role-img-alt",
+      "scrollable-region-focusable",
+      "select-name",
+      "server-side-image-map",
+      "skip-link",
+      "svg-img-alt",
+      "tabindex",
+      "table-duplicate-name",
+      "table-fake-caption",
+      "table-multiple-captions",
+      "td-has-header",
+      "td-headers-attr",
+      "th-has-data-cells",
+      "valid-lang",
+      "video-caption",
+      "video-description"
+    ],
+    "disabled": [
+      "experimental"
+    ]
+  },
+  "checks": {
+    "color-contrast": {
+      "options": {
+        "brightnessThreshold": 125,
+        "contrastThreshold": 4.5
+      }
+    },
+    "heading-order": {
+      "options": {
+        "maxHeadingLevel": 6
+      }
+    },
+    "landmark-unique": {
+      "options": {
+        "ignoreAriaLabelledBy": true
+      }
+    }
+  },
+  "reporting": {
+    "format": "json",
+    "outputDir": "tests/Accessibility/reports",
+    "includeDetails": true,
+    "severityLevels": {
+      "critical": ["color-contrast", "image-alt", "link-name", "button-name"],
+      "serious": ["aria-valid-attr", "aria-required-attr", "heading-order"],
+      "moderate": ["label", "region", "skip-link"],
+      "minor": ["meta-viewport", "html-has-lang"]
+    }
+  },
+  "thresholds": {
+    "maxViolations": {
+      "critical": 0,
+      "serious": 5,
+      "moderate": 10,
+      "minor": 20
+    },
+    "maxIncomplete": 50,
+    "maxInapplicable": 100
+  },
+  "actions": {
+    "onViolation": "report",
+    "onIncomplete": "warn",
+    "onInapplicable": "ignore"
+  }
+}

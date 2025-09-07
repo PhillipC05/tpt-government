@@ -1,0 +1,87 @@
+{
+    "name": "tpt/government-platform",
+    "description": "TPT Government Platform - A comprehensive, open-source government platform with AI integration, PWA capabilities, and enterprise-grade features",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "TPT Development Team",
+            "email": "dev@tpt.gov"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "ext-pdo": "*",
+        "ext-json": "*",
+        "ext-curl": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-gd": "*",
+        "ext-zip": "*",
+        "ext-redis": "*",
+        "ext-memcached": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "phpmd/phpmd": "^2.13",
+        "squizlabs/php_codesniffer": "^3.7",
+        "phpstan/phpstan": "^1.10",
+        "infection/infection": "^0.26",
+        "behat/behat": "^3.12",
+        "symfony/browser-kit": "^6.0",
+        "symfony/http-kernel": "^6.0",
+        "symfony/css-selector": "^6.0",
+        "codeception/codeception": "^5.0",
+        "codeception/module-phpbrowser": "^3.0",
+        "codeception/module-asserts": "^3.0",
+        "codeception/module-db": "^3.0",
+        "codeception/module-rest": "^3.0",
+        "codeception/module-webdriver": "^4.0",
+        "phpbench/phpbench": "^1.2",
+        "blackfire/php-sdk": "^1.38",
+        "roave/security-advisories": "dev-latest"
+    },
+    "autoload": {
+        "psr-4": {
+            "TPT\\": "src/php/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "TPT\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite Unit",
+        "test:integration": "phpunit --testsuite Integration",
+        "test:coverage": "phpunit --coverage-html coverage",
+        "test:coverage-clover": "phpunit --coverage-clover coverage.xml",
+        "test:performance": "phpbench run",
+        "lint": "phpcs --standard=PSR12 src/php/",
+        "lint:fix": "phpcbf --standard=PSR12 src/php/",
+        "analyze": "phpstan analyse src/php/",
+        "security": "phpstan analyse src/php/ --configuration=phpstan-security.neon",
+        "infection": "infection --threads=max --min-msi=80 --min-covered-msi=80",
+        "qa": [
+            "@lint",
+            "@analyze",
+            "@test",
+            "@security"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "infection/extension-installer": true
+        }
+    },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://packagist.org"
+        }
+    ]
+}

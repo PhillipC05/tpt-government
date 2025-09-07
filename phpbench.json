@@ -1,0 +1,45 @@
+{
+    "bootstrap": "tests/bootstrap.php",
+    "path": "src/php",
+    "reports": {
+        "aggregate": {
+            "generator": "aggregate",
+            "cols": ["benchmark", "subject", "groups", "params", "revs", "its", "mem_peak", "best", "mean", "mode", "worst", "stdev", "rstdev", "diff", "diff%"],
+            "break": ["benchmark"]
+        },
+        "console": {
+            "generator": "console",
+            "break": ["benchmark"]
+        },
+        "html": {
+            "generator": "html",
+            "file": "benchmarks/report.html",
+            "title": "TPT Government Platform - Performance Benchmarks"
+        },
+        "markdown": {
+            "generator": "markdown",
+            "file": "benchmarks/report.md",
+            "title": "TPT Government Platform - Performance Benchmarks"
+        }
+    },
+    "executors": {
+        "debug": {
+            "executor": "debug"
+        },
+        "microtime": {
+            "executor": "microtime",
+            "times": 100,
+            "warmup": 10
+        }
+    },
+    "storage": {
+        "type": "file",
+        "path": "benchmarks/storage"
+    },
+    "progress": {
+        "default": "verbose"
+    },
+    "retry_threshold": 5,
+    "time_unit": "milliseconds",
+    "memory_unit": "megabytes"
+}

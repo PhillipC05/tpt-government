@@ -1,0 +1,220 @@
+config:
+  target: 'http://localhost:8000'
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 1
+      name: "Warm-up"
+
+    # Normal load phase
+    - duration: 300
+      arrivalRate: 5
+      name: "Normal load"
+
+    # Peak load phase
+    - duration: 120
+      arrivalRate: 20
+      name: "Peak load"
+
+    # Stress test phase
+    - duration: 60
+      arrivalRate: 50
+      name: "Stress test"
+
+    # Recovery phase
+    - duration: 60
+      arrivalRate: 1
+      name: "Recovery"
+
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+
+  processor: './tests/LoadTesting/processor.js'
+
+scenarios:
+  # Health check scenario
+  - name: 'Health Check'
+    weight: 20
+    flow:
+      - get:
+          url: '/api/health'
+          expect:
+            - statusCode: 200
+          capture:
+            json: '$.status'
+            as: 'health_status'
+
+  # API info scenario
+  - name: 'API Info'
+    weight: 15
+    flow:
+      - get:
+          url: '/api/info'
+          expect:
+            - statusCode: 200
+          capture:
+            json: '$.version'
+            as: 'api_version'
+
+  # Services listing
+  - name: 'Services List'
+    weight: 25
+    flow:
+      - get:
+          url: '/api/services'
+          expect:
+            - statusCode: 200
+          capture:
+            json: '$.services'
+            as: 'services_list'
+
+  # User authentication flow
+  - name: 'User Authentication'
+    weight: 10
+    flow:
+      - post:
+          url: '/api/auth/login'
+          json:
+            email: 'test@example.com'
+            password: 'password123'
+          expect:
+            - statusCode: 200
+          capture:
+            json: '$.user.id'
+            as: 'user_id'
+            json: '$.session_id'
+            as: 'session_id'
+
+      - get:
+          url: '/api/auth/session'
+          headers:
+            Authorization: 'Bearer {{ session_id }}'
+          expect:
+            - statusCode: 200
+
+      - post:
+          url: '/api/auth/logout'
+          headers:
+            Authorization: 'Bearer {{ session_id }}'
+          expect:
+            - statusCode: 200
+
+  # User registration
+  - name: 'User Registration'
+    weight: 5
+    flow:
+      - post:
+          url: '/api/auth/register'
+          json:
+            username: 'testuser_{{ $randomInt }}'
+            email: 'testuser_{{ $randomInt }}@example.com'
+            password: 'password123'
+            first_name: 'Test'
+            last_name: 'User'
+          expect:
+            - statusCode: 201
+
+  # Webhook testing
+  - name: 'Webhook Operations'
+    weight: 8
+    flow:
+      - post:
+          url: '/api/webhooks'
+          json:
+            name: 'Test Webhook {{ $randomInt }}'
+            url: 'https://httpbin.org/post'
+            events: ['user.created', 'user.updated']
+            secret: 'test_secret_{{ $randomInt }}'
+          expect:
+            - statusCode: 201
+          capture:
+            json: '$.id'
+            as: 'webhook_id'
+
+      - get:
+          url: '/api/webhooks/{{ webhook_id }}'
+          expect:
+            - statusCode: 200
+
+      - post:
+          url: '/api/webhooks/{{ webhook_id }}/test'
+          expect:
+            - statusCode: 200
+
+  # Workflow operations
+  - name: 'Workflow Operations'
+    weight: 7
+    flow:
+      - post:
+          url: '/api/workflows'
+          json:
+            title: 'Test Workflow {{ $randomInt }}'
+            description: 'Load testing workflow'
+            priority: 'normal'
+            data:
+              test_field: 'test_value'
+          expect:
+            - statusCode: 201
+          capture:
+            json: '$.id'
+            as: 'workflow_id'
+
+      - get:
+          url: '/api/workflows/{{ workflow_id }}'
+          expect:
+            - statusCode: 200
+
+      - put:
+          url: '/api/workflows/{{ workflow_id }}'
+          json:
+            status: 'in_progress'
+          expect:
+            - statusCode: 200
+
+  # AI service testing
+  - name: 'AI Service'
+    weight: 5
+    flow:
+      - post:
+          url: '/api/ai/generate'
+          json:
+            prompt: 'Write a short description about government services'
+            provider: 'openai'
+            max_tokens: 100
+          expect:
+            - statusCode: 200
+          capture:
+            json: '$.response'
+            as: 'ai_response'
+
+  # File upload simulation
+  - name: 'File Upload'
+    weight: 3
+    flow:
+      - post:
+          url: '/api/upload'
+          formData:
+            file:
+              data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+              filename: 'test.png'
+              mimetype: 'image/png'
+          expect:
+            - statusCode: 201
+
+  # Error scenarios
+  - name: 'Error Handling'
+    weight: 2
+    flow:
+      - get:
+          url: '/api/nonexistent'
+          expect:
+            - statusCode: 404
+
+      - post:
+          url: '/api/auth/login'
+          json:
+            email: 'invalid'
+            password: ''
+          expect:
+            - statusCode: 422

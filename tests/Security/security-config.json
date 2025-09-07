@@ -1,0 +1,192 @@
+{
+  "target": {
+    "baseUrl": "http://localhost:8000",
+    "apiEndpoints": [
+      "/api/health",
+      "/api/info",
+      "/api/services",
+      "/api/auth/login",
+      "/api/auth/register",
+      "/api/auth/session",
+      "/api/users",
+      "/api/webhooks",
+      "/api/workflows",
+      "/api/admin"
+    ],
+    "excludedPaths": [
+      "/favicon.ico",
+      "/robots.txt",
+      "/sitemap.xml"
+    ]
+  },
+  "authentication": {
+    "testUser": {
+      "email": "test@example.com",
+      "password": "password123"
+    },
+    "adminUser": {
+      "email": "admin@gov.local",
+      "password": "password"
+    },
+    "invalidUser": {
+      "email": "invalid@example.com",
+      "password": "wrongpassword"
+    }
+  },
+  "vulnerabilityTests": {
+    "sqlInjection": {
+      "enabled": true,
+      "payloads": [
+        "' OR '1'='1",
+        "'; DROP TABLE users; --",
+        "' UNION SELECT * FROM users --",
+        "admin'--",
+        "' OR 1=1 --",
+        "') OR ('1'='1"
+      ]
+    },
+    "xss": {
+      "enabled": true,
+      "payloads": [
+        "<script>alert('XSS')</script>",
+        "<img src=x onerror=alert('XSS')>",
+        "<svg onload=alert('XSS')>",
+        "javascript:alert('XSS')",
+        "<iframe src=javascript:alert('XSS')>",
+        "<body onload=alert('XSS')>"
+      ]
+    },
+    "csrf": {
+      "enabled": true,
+      "testTokens": [
+        "",
+        "invalid_token",
+        "expired_token_12345"
+      ]
+    },
+    "directoryTraversal": {
+      "enabled": true,
+      "payloads": [
+        "../../../etc/passwd",
+        "..\\..\\..\\windows\\system32\\config\\sam",
+        "/etc/passwd",
+        "....//....//....//etc/passwd",
+        "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd"
+      ]
+    },
+    "commandInjection": {
+      "enabled": true,
+      "payloads": [
+        "; ls -la",
+        "| cat /etc/passwd",
+        "`whoami`",
+        "$(rm -rf /)",
+        "; net user",
+        "| dir"
+      ]
+    },
+    "rateLimiting": {
+      "enabled": true,
+      "requestsPerMinute": 100,
+      "burstLimit": 20
+    },
+    "sessionManagement": {
+      "enabled": true,
+      "testScenarios": [
+        "session_fixation",
+        "session_hijacking",
+        "concurrent_sessions",
+        "session_timeout"
+      ]
+    },
+    "fileUpload": {
+      "enabled": true,
+      "testFiles": [
+        {
+          "name": "test.php",
+          "content": "<?php echo 'test'; ?>",
+          "expected": "blocked"
+        },
+        {
+          "name": "test.exe",
+          "content": "MZ executable",
+          "expected": "blocked"
+        },
+        {
+          "name": "large_file.txt",
+          "size": "100MB",
+          "expected": "blocked"
+        }
+      ]
+    },
+    "sslTls": {
+      "enabled": true,
+      "tests": [
+        "certificate_validity",
+        "protocol_versions",
+        "cipher_suites",
+        "hsts_header",
+        "secure_cookies"
+      ]
+    },
+    "headers": {
+      "enabled": true,
+      "requiredHeaders": [
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "X-XSS-Protection",
+        "Strict-Transport-Security",
+        "Content-Security-Policy",
+        "Referrer-Policy"
+      ],
+      "forbiddenHeaders": [
+        "Server",
+        "X-Powered-By",
+        "X-AspNet-Version"
+      ]
+    },
+    "cors": {
+      "enabled": true,
+      "testOrigins": [
+        "http://localhost:3000",
+        "https://evil.com",
+        "http://127.0.0.1:8080",
+        "null"
+      ]
+    },
+    "apiSecurity": {
+      "enabled": true,
+      "tests": [
+        "method_override",
+        "mass_assignment",
+        "parameter_pollution",
+        "http_verb_tampering",
+        "api_key_exposure"
+      ]
+    }
+  },
+  "reporting": {
+    "format": "json",
+    "outputDir": "tests/Security/reports",
+    "includeDetails": true,
+    "severityLevels": {
+      "critical": ["sql_injection", "rce", "authentication_bypass"],
+      "high": ["xss", "csrf", "file_inclusion"],
+      "medium": ["information_disclosure", "weak_headers"],
+      "low": ["missing_headers", "verbose_errors"],
+      "info": ["best_practices"]
+    }
+  },
+  "thresholds": {
+    "maxVulnerabilities": {
+      "critical": 0,
+      "high": 0,
+      "medium": 5,
+      "low": 10
+    },
+    "performance": {
+      "maxResponseTime": 5000,
+      "maxMemoryUsage": "128MB"
+    }
+  }
+}

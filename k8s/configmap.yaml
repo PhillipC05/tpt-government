@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tpt-gov-config
+  namespace: tpt-gov
+  labels:
+    app: tpt-government-platform
+    component: config
+data:
+  # Application Configuration
+  APP_NAME: "TPT Government Platform"
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  APP_URL: "https://tpt.gov.local"
+  APP_TIMEZONE: "UTC"
+  APP_LOCALE: "en"
+
+  # Database Configuration
+  DB_CONNECTION: "mysql"
+  DB_CHARSET: "utf8mb4"
+  DB_COLLATION: "utf8mb4_unicode_ci"
+
+  # Redis Configuration
+  REDIS_HOST: "tpt-gov-redis-service.tpt-gov.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ""
+  REDIS_DB: "0"
+  CACHE_DRIVER: "redis"
+  SESSION_DRIVER: "redis"
+  QUEUE_CONNECTION: "redis"
+
+  # Email Configuration
+  MAIL_MAILER: "smtp"
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  MAIL_ENCRYPTION: "tls"
+  MAIL_FROM_ADDRESS: "noreply@tpt.gov.local"
+  MAIL_FROM_NAME: "TPT Government Platform"
+
+  # File Storage
+  FILESYSTEM_DISK: "local"
+  AWS_DEFAULT_REGION: "us-east-1"
+  AWS_BUCKET: "tpt-gov-documents"
+  AWS_USE_PATH_STYLE_ENDPOINT: "false"
+
+  # Security Configuration
+  BCRYPT_ROUNDS: "12"
+  JWT_TTL: "525600"  # 1 year in minutes
+  SANCTUM_STATEFUL_DOMAINS: "tpt.gov.local,api.tpt.gov.local"
+
+  # Rate Limiting
+  RATE_LIMIT_ATTEMPTS: "60"
+  RATE_LIMIT_DECAY: "1"  # per minute
+
+  # Queue Configuration
+  QUEUE_FAILED_DRIVER: "database-uuids"
+
+  # Broadcasting
+  BROADCAST_DRIVER: "pusher"
+  PUSHER_APP_ID: ""
+  PUSHER_APP_KEY: ""
+  PUSHER_APP_SECRET: ""
+  PUSHER_HOST: ""
+  PUSHER_PORT: "443"
+  PUSHER_SCHEME: "https"
+  PUSHER_APP_CLUSTER: "mt1"
+
+  # Logging
+  LOG_CHANNEL: "stack"
+  LOG_DEPRECATIONS_CHANNEL: "null"
+  LOG_LEVEL: "error"
+  LOG_STACK: "single"
+  LOG_DISK: "single"
+
+  # AI Service Configuration
+  AI_DEFAULT_PROVIDER: "openai"
+  AI_TIMEOUT: "30"
+  AI_MAX_RETRIES: "3"
+  AI_CACHE_TTL: "3600"
+
+  # Webhook Configuration
+  WEBHOOK_TIMEOUT: "30"
+  WEBHOOK_MAX_RETRIES: "5"
+  WEBHOOK_RETRY_DELAY: "60"
+
+  # Workflow Configuration
+  WORKFLOW_MAX_EXECUTION_TIME: "300"
+  WORKFLOW_MAX_PARALLEL_TASKS: "10"
+
+  # Notification Configuration
+  NOTIFICATION_BATCH_SIZE: "100"
+  NOTIFICATION_RATE_LIMIT: "1000"
+
+  # Audit Configuration
+  AUDIT_RETENTION_DAYS: "2555"  # 7 years
+  AUDIT_CLEANUP_BATCH_SIZE: "1000"
+
+  # Performance Configuration
+  QUERY_OPTIMIZATION_ENABLED: "true"
+  CACHE_TTL: "3600"
+  SESSION_LIFETIME: "120"  # 2 hours
+
+  # Feature Flags
+  MFA_ENABLED: "true"
+  OAUTH_ENABLED: "true"
+  API_ENABLED: "true"
+  WEBHOOKS_ENABLED: "true"
+  WORKFLOWS_ENABLED: "true"
+  AI_FEATURES_ENABLED: "true"
+  ERP_INTEGRATION_ENABLED: "true"
+
+  # Government-Specific Configuration
+  GOV_COMPLIANCE_LEVEL: "federal"
+  DATA_RETENTION_YEARS: "7"
+  AUDIT_LOG_LEVEL: "detailed"
+  ENCRYPTION_ALGORITHM: "aes-256-gcm"
+  COMPLIANCE_REPORTING_ENABLED: "true"
+
+  # Monitoring Configuration
+  PROMETHEUS_METRICS_ENABLED: "true"
+  HEALTH_CHECK_ENABLED: "true"
+  PERFORMANCE_MONITORING_ENABLED: "true"
