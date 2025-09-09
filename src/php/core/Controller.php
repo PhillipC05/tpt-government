@@ -2,23 +2,30 @@
 /**
  * TPT Government Platform - Base Controller
  *
- * Base controller class with common functionality.
+ * Base controller class with common functionality and dependency injection.
  * All controllers should extend this class.
  */
 
 namespace Core;
 
+use Core\DependencyInjection\Container;
+
 abstract class Controller
 {
     /**
+     * Dependency injection container
+     */
+    protected Container $container;
+
+    /**
      * Request instance
      */
-    protected ?Request $request = null;
+    protected Request $request;
 
     /**
      * Response instance
      */
-    protected ?Response $response = null;
+    protected Response $response;
 
     /**
      * Database instance
@@ -26,33 +33,36 @@ abstract class Controller
     protected ?Database $database = null;
 
     /**
-     * Set request instance
-     *
-     * @param Request $request The request instance
-     * @return void
+     * Constructor with dependency injection
+     */
+    public function __construct(Container $container)
+    {
+        $this->container = $container;
+        $this->request = $container->get(Request::class);
+        $this->response = $container->get(Response::class);
+
+        // Try to get database from container
+        try {
+            $this->database = $container->get('database');
+        } catch (\Exception $e) {
+            $this->database = null;
+        }
+    }
+
+    /**
+     * Legacy setter methods for backward compatibility
+     * @deprecated Use constructor injection instead
      */
     public function setRequest(Request $request): void
     {
         $this->request = $request;
     }
 
-    /**
-     * Set response instance
-     *
-     * @param Response $response The response instance
-     * @return void
-     */
     public function setResponse(Response $response): void
     {
         $this->response = $response;
     }
 
-    /**
-     * Set database instance
-     *
-     * @param Database $database The database instance
-     * @return void
-     */
     public function setDatabase(Database $database): void
     {
         $this->database = $database;

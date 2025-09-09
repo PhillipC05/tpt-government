@@ -1,1593 +1,1046 @@
 <?php
 /**
- * TPT Government Platform - Trade Licenses Module
- *
- * Comprehensive trade licensing and professional certification management system
- * supporting qualification verification, certification tracking, and regulatory compliance
+ * Trade Licenses Module
+ * Handles professional qualification verification, certification tracking, and continuing education
  */
 
-namespace Modules\TradeLicenses;
+require_once __DIR__ . '/../ServiceModule.php';
 
-use Modules\ServiceModule;
-use Core\Database;
-use Core\WorkflowEngine;
-use Core\NotificationManager;
-use Core\PaymentGateway;
+class TradeLicensesModule extends ServiceModule {
+    private $db;
+    private $config;
 
-class TradeLicensesModule extends ServiceModule
-{
-    /**
-     * Module metadata
-     */
-    protected array $metadata = [
-        'name' => 'Trade Licenses',
-        'version' => '2.1.0',
-        'description' => 'Comprehensive trade licensing and professional certification management system',
-        'author' => 'TPT Government Platform',
-        'category' => 'business_services',
-        'dependencies' => ['database', 'workflow', 'payment', 'notification']
-    ];
+    public function __construct($db = null) {
+        parent::__construct();
+        $this->db = $db ?: new Database();
+        $this->config = $this->loadConfig();
+    }
 
-    /**
-     * Module dependencies
-     */
-    protected array $dependencies = [
-        ['name' => 'Database', 'version' => '>=1.0.0'],
-        ['name' => 'WorkflowEngine', 'version' => '>=1.0.0'],
-        ['name' => 'PaymentGateway', 'version' => '>=1.0.0'],
-        ['name' => 'NotificationManager', 'version' => '>=1.0.0']
-    ];
+    public function getModuleInfo() {
+        return [
+            'name' => 'Trade Licenses Module',
+            'version' => '1.0.0',
+            'description' => 'Comprehensive trade licensing system for professional qualification verification, certification tracking, continuing education monitoring, and disciplinary action management',
+            'dependencies' => ['IdentityServices', 'FinancialManagement', 'RecordsManagement'],
+            'permissions' => [
+                'trade.view' => 'View trade license information',
+                'trade.apply' => 'Apply for trade licenses',
+                'trade.manage' => 'Manage trade license applications',
+                'trade.admin' => 'Administrative functions for trade licensing'
+            ]
+        ];
+    }
 
-    /**
-     * Module permissions
-     */
-    protected array $permissions = [
-        'trade_licenses.view' => 'View trade license applications and certifications',
-        'trade_licenses.create' => 'Create new trade license applications',
-        'trade_licenses.edit' => 'Edit trade license information',
-        'trade_licenses.approve' => 'Approve trade license applications',
-        'trade_licenses.reject' => 'Reject trade license applications',
-        'trade_licenses.renew' => 'Renew trade licenses',
-        'trade_licenses.revoke' => 'Revoke trade licenses',
-        'trade_licenses.disciplinary' => 'Manage disciplinary actions',
-        'trade_licenses.compliance' => 'Monitor continuing education compliance',
-        'trade_licenses.certification' => 'Manage professional certifications'
-    ];
+    public function install() {
+        $this->createTables();
+        $this->setupWorkflows();
+        $this->createDirectories();
+        return true;
+    }
 
-    /**
-     * Module database tables
-     */
-    protected array $tables = [
-        'trade_licenses' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'license_number' => 'VARCHAR(20) UNIQUE NOT NULL',
-            'applicant_id' => 'INT NOT NULL',
-            'trade_type' => 'VARCHAR(100) NOT NULL',
-            'license_class' => "ENUM('apprentice','journeyman','master','specialist') NOT NULL",
-            'status' => "ENUM('application_pending','under_review','approved','rejected','active','expired','suspended','revoked') DEFAULT 'application_pending'",
-            'application_date' => 'DATETIME NOT NULL',
-            'approval_date' => 'DATETIME NULL',
-            'expiry_date' => 'DATETIME NULL',
-            'renewal_date' => 'DATETIME NULL',
-            'fee_amount' => 'DECIMAL(8,2) DEFAULT 0.00',
-            'bond_amount' => 'DECIMAL(8,2) DEFAULT 0.00',
-            'insurance_required' => 'BOOLEAN DEFAULT TRUE',
-            'supervisor_id' => 'INT NULL',
-            'work_address' => 'TEXT',
-            'specializations' => 'JSON',
-            'qualifications' => 'JSON',
-            'documents' => 'JSON',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ],
-        'trade_certifications' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'license_id' => 'INT NOT NULL',
-            'certification_type' => 'VARCHAR(100) NOT NULL',
-            'certification_number' => 'VARCHAR(50) UNIQUE NOT NULL',
-            'issuing_authority' => 'VARCHAR(255) NOT NULL',
-            'issue_date' => 'DATE NOT NULL',
-            'expiry_date' => 'DATE NULL',
-            'status' => "ENUM('active','expired','revoked','suspended') DEFAULT 'active'",
-            'verification_date' => 'DATE NULL',
-            'verification_status' => "ENUM('pending','verified','failed') DEFAULT 'pending'",
-            'document_path' => 'VARCHAR(500)',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'continuing_education' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'license_id' => 'INT NOT NULL',
-            'course_name' => 'VARCHAR(255) NOT NULL',
-            'provider' => 'VARCHAR(255) NOT NULL',
-            'course_type' => "ENUM('classroom','online','workshop','conference','self_study') NOT NULL",
-            'completion_date' => 'DATE NOT NULL',
-            'credit_hours' => 'DECIMAL(5,2) NOT NULL',
-            'certificate_number' => 'VARCHAR(50)',
-            'verification_status' => "ENUM('pending','verified','rejected') DEFAULT 'pending'",
-            'document_path' => 'VARCHAR(500)',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'disciplinary_actions' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'license_id' => 'INT NOT NULL',
-            'action_type' => "ENUM('warning','fine','suspension','revocation','probation') NOT NULL",
-            'violation_description' => 'TEXT NOT NULL',
-            'action_date' => 'DATE NOT NULL',
-            'effective_date' => 'DATE NOT NULL',
-            'end_date' => 'DATE NULL',
-            'fine_amount' => 'DECIMAL(8,2) DEFAULT 0.00',
-            'investigator_id' => 'INT NOT NULL',
-            'hearing_date' => 'DATE NULL',
-            'hearing_officer' => 'VARCHAR(100)',
-            'decision' => 'TEXT',
-            'appeal_deadline' => 'DATE NULL',
-            'status' => "ENUM('pending','active','completed','appealed','overturned') DEFAULT 'pending'",
-            'documents' => 'JSON',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'trade_examinations' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'license_id' => 'INT NOT NULL',
-            'exam_type' => "ENUM('written','practical','oral','continuing_education') NOT NULL",
-            'exam_date' => 'DATE NOT NULL',
-            'exam_location' => 'VARCHAR(255)',
-            'examiner_id' => 'INT NOT NULL',
-            'score' => 'DECIMAL(5,2) NULL',
-            'passing_score' => 'DECIMAL(5,2) NOT NULL',
-            'result' => "ENUM('pass','fail','incomplete','withdrawn') NULL",
-            'certificate_issued' => 'BOOLEAN DEFAULT FALSE',
-            'retake_eligible' => 'BOOLEAN DEFAULT FALSE',
-            'next_retake_date' => 'DATE NULL',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'trade_types' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'trade_code' => 'VARCHAR(10) UNIQUE NOT NULL',
-            'trade_name' => 'VARCHAR(255) NOT NULL',
-            'category' => 'VARCHAR(100) NOT NULL',
-            'description' => 'TEXT',
-            'license_required' => 'BOOLEAN DEFAULT TRUE',
-            'insurance_required' => 'BOOLEAN DEFAULT TRUE',
-            'bond_required' => 'BOOLEAN DEFAULT FALSE',
-            'continuing_education_required' => 'BOOLEAN DEFAULT TRUE',
-            'education_hours_per_year' => 'INT DEFAULT 8',
-            'exam_required' => 'BOOLEAN DEFAULT TRUE',
-            'supervision_required' => 'BOOLEAN DEFAULT FALSE',
-            'is_active' => 'BOOLEAN DEFAULT TRUE',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'license_renewals' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'license_id' => 'INT NOT NULL',
-            'renewal_period_start' => 'DATE NOT NULL',
-            'renewal_period_end' => 'DATE NOT NULL',
-            'renewal_fee' => 'DECIMAL(8,2) NOT NULL',
-            'continuing_education_completed' => 'BOOLEAN DEFAULT FALSE',
-            'insurance_verified' => 'BOOLEAN DEFAULT FALSE',
-            'status' => "ENUM('pending','approved','rejected','expired') DEFAULT 'pending'",
-            'processed_date' => 'DATE NULL',
-            'processed_by' => 'INT NULL',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ]
-    ];
+    public function uninstall() {
+        $this->dropTables();
+        return true;
+    }
 
-    /**
-     * Module API endpoints
-     */
-    protected array $endpoints = [
-        [
-            'method' => 'GET',
-            'path' => '/api/trade-licenses',
-            'handler' => 'getTradeLicenses',
-            'auth' => true,
-            'permissions' => ['trade_licenses.view']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/trade-licenses',
-            'handler' => 'createTradeLicense',
-            'auth' => true,
-            'permissions' => ['trade_licenses.create']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/trade-licenses/{id}',
-            'handler' => 'getTradeLicense',
-            'auth' => true,
-            'permissions' => ['trade_licenses.view']
-        ],
-        [
-            'method' => 'PUT',
-            'path' => '/api/trade-licenses/{id}',
-            'handler' => 'updateTradeLicense',
-            'auth' => true,
-            'permissions' => ['trade_licenses.edit']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/trade-licenses/{id}/approve',
-            'handler' => 'approveTradeLicense',
-            'auth' => true,
-            'permissions' => ['trade_licenses.approve']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/trade-licenses/{id}/renew',
-            'handler' => 'renewTradeLicense',
-            'auth' => true,
-            'permissions' => ['trade_licenses.renew']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/trade-certifications',
-            'handler' => 'getCertifications',
-            'auth' => true,
-            'permissions' => ['trade_licenses.certification']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/trade-certifications',
-            'handler' => 'addCertification',
-            'auth' => true,
-            'permissions' => ['trade_licenses.certification']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/continuing-education',
-            'handler' => 'getContinuingEducation',
-            'auth' => true,
-            'permissions' => ['trade_licenses.compliance']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/continuing-education',
-            'handler' => 'addContinuingEducation',
-            'auth' => true,
-            'permissions' => ['trade_licenses.compliance']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/disciplinary-actions',
-            'handler' => 'getDisciplinaryActions',
-            'auth' => true,
-            'permissions' => ['trade_licenses.disciplinary']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/disciplinary-actions',
-            'handler' => 'createDisciplinaryAction',
-            'auth' => true,
-            'permissions' => ['trade_licenses.disciplinary']
-        ]
-    ];
+    private function createTables() {
+        $sql = "
+            CREATE TABLE IF NOT EXISTS trade_licenses (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                license_number VARCHAR(20) UNIQUE NOT NULL,
+                applicant_id INT,
 
-    /**
-     * Module workflows
-     */
-    protected array $workflows = [
-        'license_application' => [
-            'name' => 'Trade License Application',
-            'description' => 'Workflow for processing trade license applications',
+                -- Applicant Information
+                applicant_name VARCHAR(200) NOT NULL,
+                applicant_email VARCHAR(255),
+                applicant_phone VARCHAR(20),
+                date_of_birth DATE,
+                address TEXT,
+
+                -- Trade Information
+                trade_category VARCHAR(100) NOT NULL,
+                trade_specialty VARCHAR(100),
+                license_type ENUM('full', 'limited', 'temporary', 'apprentice', 'master') DEFAULT 'full',
+                license_class VARCHAR(50),
+
+                -- Qualification Details
+                qualification_level ENUM('certificate', 'diploma', 'degree', 'master', 'other') DEFAULT 'certificate',
+                institution_name VARCHAR(200),
+                qualification_date DATE,
+                experience_years INT DEFAULT 0,
+
+                -- License Status
+                license_status ENUM('application_pending', 'under_review', 'approved', 'rejected', 'active', 'suspended', 'revoked', 'expired', 'renewal_pending') DEFAULT 'application_pending',
+                application_date DATE NOT NULL,
+                approval_date DATE,
+                expiry_date DATE,
+                suspension_date DATE,
+                suspension_reason TEXT,
+
+                -- Financial Information
+                application_fee DECIMAL(8,2) DEFAULT 0,
+                license_fee DECIMAL(8,2) DEFAULT 0,
+                renewal_fee DECIMAL(8,2) DEFAULT 0,
+                payment_status ENUM('pending', 'paid', 'overdue', 'waived') DEFAULT 'pending',
+
+                -- Documents
+                qualification_documents TEXT, -- JSON array of document paths
+                identity_documents TEXT, -- JSON array of document paths
+                experience_documents TEXT, -- JSON array of document paths
+
+                -- Review Information
+                reviewer_id INT,
+                review_date DATE,
+                review_notes TEXT,
+                approval_conditions TEXT,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                INDEX idx_license_number (license_number),
+                INDEX idx_applicant_id (applicant_id),
+                INDEX idx_trade_category (trade_category),
+                INDEX idx_license_status (license_status),
+                INDEX idx_expiry_date (expiry_date),
+                INDEX idx_application_date (application_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_qualifications (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                qualification_code VARCHAR(20) UNIQUE NOT NULL,
+                trade_category VARCHAR(100) NOT NULL,
+
+                -- Qualification Details
+                qualification_name VARCHAR(200) NOT NULL,
+                qualification_description TEXT,
+                qualification_level ENUM('entry', 'intermediate', 'advanced', 'master') DEFAULT 'entry',
+
+                -- Requirements
+                minimum_age INT DEFAULT 18,
+                minimum_education VARCHAR(100),
+                required_experience_years INT DEFAULT 0,
+                required_training_hours INT DEFAULT 0,
+
+                -- Prerequisites
+                prerequisite_qualifications TEXT, -- JSON array of qualification codes
+                required_exams TEXT, -- JSON array of exam codes
+
+                -- Validity
+                validity_years INT DEFAULT 5,
+                renewal_requirements TEXT, -- JSON array of renewal requirements
+
+                -- Status
+                qualification_status ENUM('active', 'inactive', 'deprecated') DEFAULT 'active',
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                INDEX idx_qualification_code (qualification_code),
+                INDEX idx_trade_category (trade_category),
+                INDEX idx_qualification_level (qualification_level),
+                INDEX idx_qualification_status (qualification_status)
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_exams (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                exam_code VARCHAR(20) UNIQUE NOT NULL,
+                exam_name VARCHAR(200) NOT NULL,
+
+                -- Exam Details
+                trade_category VARCHAR(100) NOT NULL,
+                exam_type ENUM('written', 'practical', 'oral', 'combined') DEFAULT 'written',
+                exam_level ENUM('entry', 'intermediate', 'advanced', 'master') DEFAULT 'entry',
+
+                -- Scheduling
+                exam_duration_minutes INT DEFAULT 120,
+                passing_score DECIMAL(5,2) DEFAULT 70.00,
+                max_attempts INT DEFAULT 3,
+
+                -- Fees
+                exam_fee DECIMAL(8,2) DEFAULT 0,
+                retake_fee DECIMAL(8,2) DEFAULT 0,
+
+                -- Status
+                exam_status ENUM('active', 'inactive', 'discontinued') DEFAULT 'active',
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                INDEX idx_exam_code (exam_code),
+                INDEX idx_trade_category (trade_category),
+                INDEX idx_exam_type (exam_type),
+                INDEX idx_exam_status (exam_status)
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_exam_results (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                result_code VARCHAR(20) UNIQUE NOT NULL,
+                license_id INT NOT NULL,
+                exam_id INT NOT NULL,
+
+                -- Exam Details
+                exam_date DATE NOT NULL,
+                exam_score DECIMAL(5,2),
+                passing_score DECIMAL(5,2),
+                result_status ENUM('pass', 'fail', 'absent', 'cancelled') DEFAULT 'fail',
+
+                -- Attempt Information
+                attempt_number INT DEFAULT 1,
+                max_attempts INT DEFAULT 3,
+
+                -- Examiner Details
+                examiner_name VARCHAR(100),
+                examiner_notes TEXT,
+
+                -- Certificate
+                certificate_issued BOOLEAN DEFAULT FALSE,
+                certificate_number VARCHAR(30),
+                certificate_date DATE,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (license_id) REFERENCES trade_licenses(id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES trade_exams(id),
+                INDEX idx_result_code (result_code),
+                INDEX idx_license_id (license_id),
+                INDEX idx_exam_id (exam_id),
+                INDEX idx_result_status (result_status),
+                INDEX idx_exam_date (exam_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_continuing_education (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                education_code VARCHAR(20) UNIQUE NOT NULL,
+                license_id INT NOT NULL,
+
+                -- Education Details
+                course_name VARCHAR(200) NOT NULL,
+                course_provider VARCHAR(200) NOT NULL,
+                course_type ENUM('workshop', 'seminar', 'conference', 'online_course', 'certification', 'other') DEFAULT 'workshop',
+
+                -- Course Information
+                course_date DATE NOT NULL,
+                completion_date DATE,
+                course_hours DECIMAL(5,2) NOT NULL,
+                course_description TEXT,
+
+                -- Verification
+                verification_method ENUM('certificate', 'attendance_record', 'provider_confirmation', 'exam') DEFAULT 'certificate',
+                verification_document VARCHAR(255),
+
+                -- Status
+                education_status ENUM('completed', 'in_progress', 'cancelled', 'rejected') DEFAULT 'completed',
+                approval_date DATE,
+                approved_by INT,
+
+                -- Renewal Credits
+                renewal_credits DECIMAL(5,2) DEFAULT 0,
+                credit_expiry_date DATE,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (license_id) REFERENCES trade_licenses(id) ON DELETE CASCADE,
+                INDEX idx_education_code (education_code),
+                INDEX idx_license_id (license_id),
+                INDEX idx_course_type (course_type),
+                INDEX idx_education_status (education_status),
+                INDEX idx_course_date (course_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_disciplinary_actions (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                action_code VARCHAR(20) UNIQUE NOT NULL,
+                license_id INT NOT NULL,
+
+                -- Action Details
+                action_type ENUM('warning', 'fine', 'suspension', 'revocation', 'license_modification', 'other') NOT NULL,
+                action_date DATE NOT NULL,
+                effective_date DATE,
+
+                -- Violation Information
+                violation_description TEXT NOT NULL,
+                violation_code VARCHAR(20),
+                severity_level ENUM('minor', 'moderate', 'major', 'critical') DEFAULT 'moderate',
+
+                -- Action Details
+                suspension_period_days INT,
+                fine_amount DECIMAL(8,2) DEFAULT 0,
+                action_description TEXT,
+
+                -- Resolution
+                resolution_date DATE,
+                resolution_description TEXT,
+                appeal_status ENUM('none', 'pending', 'approved', 'denied') DEFAULT 'none',
+
+                -- Officer Information
+                action_officer VARCHAR(100),
+                review_officer VARCHAR(100),
+
+                -- Status
+                action_status ENUM('active', 'resolved', 'appealed', 'overturned') DEFAULT 'active',
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (license_id) REFERENCES trade_licenses(id) ON DELETE CASCADE,
+                INDEX idx_action_code (action_code),
+                INDEX idx_license_id (license_id),
+                INDEX idx_action_type (action_type),
+                INDEX idx_severity_level (severity_level),
+                INDEX idx_action_status (action_status),
+                INDEX idx_action_date (action_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_renewals (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                renewal_code VARCHAR(20) UNIQUE NOT NULL,
+                license_id INT NOT NULL,
+
+                -- Renewal Details
+                renewal_period_start DATE NOT NULL,
+                renewal_period_end DATE NOT NULL,
+                renewal_due_date DATE NOT NULL,
+                renewal_date DATE,
+
+                -- Requirements Check
+                continuing_education_completed BOOLEAN DEFAULT FALSE,
+                required_credits_earned DECIMAL(5,2) DEFAULT 0,
+                required_credits_needed DECIMAL(5,2) DEFAULT 0,
+
+                -- Financial Information
+                renewal_fee DECIMAL(8,2) DEFAULT 0,
+                late_fee DECIMAL(8,2) DEFAULT 0,
+                total_amount DECIMAL(8,2) DEFAULT 0,
+                payment_status ENUM('pending', 'paid', 'overdue', 'waived') DEFAULT 'pending',
+
+                -- Status
+                renewal_status ENUM('pending', 'approved', 'rejected', 'expired', 'cancelled') DEFAULT 'pending',
+                approval_date DATE,
+                rejection_reason TEXT,
+
+                -- Notifications
+                reminder_sent BOOLEAN DEFAULT FALSE,
+                reminder_date DATE,
+                final_notice_sent BOOLEAN DEFAULT FALSE,
+                final_notice_date DATE,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (license_id) REFERENCES trade_licenses(id) ON DELETE CASCADE,
+                INDEX idx_renewal_code (renewal_code),
+                INDEX idx_license_id (license_id),
+                INDEX idx_renewal_status (renewal_status),
+                INDEX idx_renewal_due_date (renewal_due_date),
+                INDEX idx_renewal_date (renewal_date)
+            );
+        ";
+
+        $this->db->query($sql);
+    }
+
+    private function setupWorkflows() {
+        // Setup license application workflow
+        $licenseApplicationWorkflow = [
+            'name' => 'Trade License Application Workflow',
+            'description' => 'Complete workflow for trade license applications and approvals',
             'steps' => [
-                'application_pending' => ['name' => 'Application Submitted', 'next' => 'document_review'],
-                'document_review' => ['name' => 'Document Review', 'next' => 'qualification_verification'],
-                'qualification_verification' => ['name' => 'Qualification Verification', 'next' => 'background_check'],
-                'background_check' => ['name' => 'Background Check', 'next' => 'exam_scheduling'],
-                'exam_scheduling' => ['name' => 'Exam Scheduling', 'next' => 'exam_completion'],
-                'exam_completion' => ['name' => 'Exam Completed', 'next' => 'final_review'],
-                'final_review' => ['name' => 'Final Review', 'next' => ['approved', 'rejected', 'additional_requirements']],
-                'additional_requirements' => ['name' => 'Additional Requirements', 'next' => 'final_review'],
-                'approved' => ['name' => 'License Approved', 'next' => 'license_issued'],
-                'license_issued' => ['name' => 'License Issued', 'next' => null],
-                'rejected' => ['name' => 'Application Rejected', 'next' => null]
-            ]
-        ],
-        'license_renewal' => [
-            'name' => 'License Renewal',
-            'description' => 'Workflow for trade license renewal process',
-            'steps' => [
-                'renewal_due' => ['name' => 'Renewal Due', 'next' => 'ce_verification'],
-                'ce_verification' => ['name' => 'Continuing Education Verification', 'next' => 'insurance_verification'],
-                'insurance_verification' => ['name' => 'Insurance Verification', 'next' => 'fee_payment'],
-                'fee_payment' => ['name' => 'Fee Payment', 'next' => 'renewal_approval'],
-                'renewal_approval' => ['name' => 'Renewal Approved', 'next' => 'license_renewed'],
-                'license_renewed' => ['name' => 'License Renewed', 'next' => null]
-            ]
-        ],
-        'disciplinary_process' => [
-            'name' => 'Disciplinary Process',
-            'description' => 'Workflow for handling disciplinary actions',
-            'steps' => [
-                'complaint_received' => ['name' => 'Complaint Received', 'next' => 'investigation'],
-                'investigation' => ['name' => 'Investigation', 'next' => 'hearing_scheduled'],
-                'hearing_scheduled' => ['name' => 'Hearing Scheduled', 'next' => 'hearing_completed'],
-                'hearing_completed' => ['name' => 'Hearing Completed', 'next' => 'decision_made'],
-                'decision_made' => ['name' => 'Decision Made', 'next' => ['action_implemented', 'appeal_period']],
-                'appeal_period' => ['name' => 'Appeal Period', 'next' => ['appeal_upheld', 'appeal_overturned']],
-                'appeal_upheld' => ['name' => 'Appeal Upheld', 'next' => 'action_implemented'],
-                'appeal_overturned' => ['name' => 'Appeal Overturned', 'next' => null],
-                'action_implemented' => ['name' => 'Action Implemented', 'next' => null]
-            ]
-        ]
-    ];
-
-    /**
-     * Module forms
-     */
-    protected array $forms = [
-        'trade_license_application' => [
-            'name' => 'Trade License Application',
-            'fields' => [
-                'trade_type' => ['type' => 'select', 'required' => true, 'label' => 'Trade Type'],
-                'license_class' => ['type' => 'select', 'required' => true, 'label' => 'License Class'],
-                'applicant_name' => ['type' => 'text', 'required' => true, 'label' => 'Full Name'],
-                'applicant_email' => ['type' => 'email', 'required' => true, 'label' => 'Email Address'],
-                'applicant_phone' => ['type' => 'tel', 'required' => true, 'label' => 'Phone Number'],
-                'date_of_birth' => ['type' => 'date', 'required' => true, 'label' => 'Date of Birth'],
-                'ssn' => ['type' => 'text', 'required' => true, 'label' => 'Social Security Number'],
-                'address' => ['type' => 'textarea', 'required' => true, 'label' => 'Residential Address'],
-                'work_address' => ['type' => 'textarea', 'required' => false, 'label' => 'Work Address'],
-                'employer_name' => ['type' => 'text', 'required' => false, 'label' => 'Employer Name'],
-                'supervisor_name' => ['type' => 'text', 'required' => false, 'label' => 'Supervisor Name'],
-                'supervisor_license' => ['type' => 'text', 'required' => false, 'label' => 'Supervisor License Number'],
-                'education_level' => ['type' => 'select', 'required' => true, 'label' => 'Education Level'],
-                'training_program' => ['type' => 'text', 'required' => false, 'label' => 'Training Program'],
-                'years_experience' => ['type' => 'number', 'required' => true, 'label' => 'Years of Experience'],
-                'specializations' => ['type' => 'multiselect', 'required' => false, 'label' => 'Specializations'],
-                'criminal_history' => ['type' => 'radio', 'required' => true, 'options' => ['yes', 'no'], 'label' => 'Criminal History'],
-                'criminal_details' => ['type' => 'textarea', 'required' => false, 'label' => 'Criminal History Details'],
-                'insurance_provider' => ['type' => 'text', 'required' => false, 'label' => 'Insurance Provider'],
-                'policy_number' => ['type' => 'text', 'required' => false, 'label' => 'Policy Number']
-            ],
-            'documents' => [
-                'photo_id' => ['required' => true, 'label' => 'Government Issued Photo ID'],
-                'proof_of_address' => ['required' => true, 'label' => 'Proof of Address'],
-                'education_certificates' => ['required' => true, 'label' => 'Education Certificates'],
-                'training_certificates' => ['required' => false, 'label' => 'Training Certificates'],
-                'experience_letters' => ['required' => true, 'label' => 'Experience Letters'],
-                'background_check' => ['required' => true, 'label' => 'Background Check Results'],
-                'insurance_certificate' => ['required' => false, 'label' => 'Insurance Certificate'],
-                'medical_certificate' => ['required' => false, 'label' => 'Medical Certificate']
-            ]
-        ],
-        'continuing_education' => [
-            'name' => 'Continuing Education Submission',
-            'fields' => [
-                'course_name' => ['type' => 'text', 'required' => true, 'label' => 'Course Name'],
-                'provider' => ['type' => 'text', 'required' => true, 'label' => 'Course Provider'],
-                'course_type' => ['type' => 'select', 'required' => true, 'label' => 'Course Type'],
-                'completion_date' => ['type' => 'date', 'required' => true, 'label' => 'Completion Date'],
-                'credit_hours' => ['type' => 'number', 'required' => true, 'label' => 'Credit Hours', 'step' => '0.5'],
-                'certificate_number' => ['type' => 'text', 'required' => false, 'label' => 'Certificate Number'],
-                'course_description' => ['type' => 'textarea', 'required' => false, 'label' => 'Course Description']
-            ],
-            'documents' => [
-                'certificate' => ['required' => true, 'label' => 'Course Certificate'],
-                'transcript' => ['required' => false, 'label' => 'Course Transcript']
-            ]
-        ],
-        'disciplinary_complaint' => [
-            'name' => 'Disciplinary Complaint',
-            'fields' => [
-                'license_number' => ['type' => 'text', 'required' => true, 'label' => 'License Number'],
-                'complaint_type' => ['type' => 'select', 'required' => true, 'label' => 'Complaint Type'],
-                'complaint_description' => ['type' => 'textarea', 'required' => true, 'label' => 'Complaint Description'],
-                'incident_date' => ['type' => 'date', 'required' => true, 'label' => 'Incident Date'],
-                'incident_location' => ['type' => 'textarea', 'required' => true, 'label' => 'Incident Location'],
-                'complainant_name' => ['type' => 'text', 'required' => true, 'label' => 'Complainant Name'],
-                'complainant_contact' => ['type' => 'text', 'required' => true, 'label' => 'Complainant Contact'],
-                'witnesses' => ['type' => 'textarea', 'required' => false, 'label' => 'Witnesses'],
-                'evidence_description' => ['type' => 'textarea', 'required' => false, 'label' => 'Evidence Description']
-            ],
-            'documents' => [
-                'complaint_documents' => ['required' => false, 'label' => 'Supporting Documents'],
-                'evidence_photos' => ['required' => false, 'label' => 'Evidence Photos']
-            ]
-        ]
-    ];
-
-    /**
-     * Module reports
-     */
-    protected array $reports = [
-        'license_overview' => [
-            'name' => 'Trade License Overview Report',
-            'description' => 'Summary of all trade licenses by type and status',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'trade_type' => ['type' => 'select', 'required' => false],
-                'license_class' => ['type' => 'select', 'required' => false],
-                'status' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'license_number', 'trade_type', 'license_class', 'status',
-                'application_date', 'approval_date', 'expiry_date'
-            ]
-        ],
-        'certification_compliance' => [
-            'name' => 'Certification Compliance Report',
-            'description' => 'Certification status and compliance tracking',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'certification_type' => ['type' => 'select', 'required' => false],
-                'status' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'license_number', 'certification_type', 'issue_date',
-                'expiry_date', 'status', 'verification_status'
-            ]
-        ],
-        'continuing_education' => [
-            'name' => 'Continuing Education Report',
-            'description' => 'Continuing education completion and compliance',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'trade_type' => ['type' => 'select', 'required' => false],
-                'course_type' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'license_number', 'course_name', 'provider', 'completion_date',
-                'credit_hours', 'verification_status'
-            ]
-        ],
-        'disciplinary_actions' => [
-            'name' => 'Disciplinary Actions Report',
-            'description' => 'Summary of disciplinary actions taken',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'action_type' => ['type' => 'select', 'required' => false],
-                'trade_type' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'license_number', 'action_type', 'violation_description',
-                'action_date', 'status', 'investigator_id'
-            ]
-        ],
-        'renewal_compliance' => [
-            'name' => 'License Renewal Compliance Report',
-            'description' => 'License renewal status and compliance',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'renewal_status' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'license_number', 'renewal_period', 'continuing_education_completed',
-                'insurance_verified', 'status', 'processed_date'
-            ]
-        ]
-    ];
-
-    /**
-     * Module notifications
-     */
-    protected array $notifications = [
-        'application_submitted' => [
-            'name' => 'License Application Submitted',
-            'template' => 'Your trade license application has been submitted successfully. Application will be reviewed within 5-7 business days.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['application_created']
-        ],
-        'application_approved' => [
-            'name' => 'License Application Approved',
-            'template' => 'Congratulations! Your {trade_type} license application has been approved. License Number: {license_number}',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['application_approved']
-        ],
-        'application_rejected' => [
-            'name' => 'License Application Rejected',
-            'template' => 'Your trade license application has been rejected. Please review the feedback and contact us for clarification.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['application_rejected']
-        ],
-        'exam_scheduled' => [
-            'name' => 'Examination Scheduled',
-            'template' => 'Your trade examination has been scheduled for {exam_date} at {exam_location}.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['exam_scheduled']
-        ],
-        'exam_results' => [
-            'name' => 'Examination Results',
-            'template' => 'Your examination results are available. Result: {exam_result}. Score: {exam_score}%',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['exam_completed']
-        ],
-        'renewal_reminder' => [
-            'name' => 'License Renewal Reminder',
-            'template' => 'Your {trade_type} license expires on {expiry_date}. Please ensure continuing education requirements are met.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['renewal_due']
-        ],
-        'renewal_overdue' => [
-            'name' => 'License Renewal Overdue',
-            'template' => 'Your trade license renewal is overdue. Immediate action is required to avoid suspension.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['renewal_overdue']
-        ],
-        'disciplinary_notice' => [
-            'name' => 'Disciplinary Action Notice',
-            'template' => 'A disciplinary action has been initiated against your license. Type: {action_type}. Hearing Date: {hearing_date}',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['disciplinary_action']
-        ],
-        'ce_requirement_reminder' => [
-            'name' => 'Continuing Education Reminder',
-            'template' => 'You need {required_hours} continuing education hours by {deadline_date}. Completed: {completed_hours} hours.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['ce_due']
-        ],
-        'license_suspended' => [
-            'name' => 'License Suspended',
-            'template' => 'Your trade license has been suspended due to {reason}. Contact us immediately for resolution.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['license_suspended']
-        ]
-    ];
-
-    /**
-     * Trade types configuration
-     */
-    private array $tradeTypes = [];
-
-    /**
-     * Certification types
-     */
-    private array $certificationTypes = [];
-
-    /**
-     * Continuing education requirements
-     */
-    private array $ceRequirements = [];
-
-    /**
-     * Constructor
-     */
-    public function __construct(array $config = [])
-    {
-        parent::__construct($config);
-    }
-
-    /**
-     * Get module metadata
-     */
-    public function getMetadata(): array
-    {
-        return $this->metadata;
-    }
-
-    /**
-     * Get default configuration
-     */
-    protected function getDefaultConfig(): array
-    {
-        return [
-            'enabled' => true,
-            'application_processing_days' => 30,
-            'renewal_reminder_days' => 60,
-            'grace_period_days' => 30,
-            'max_upload_size' => 10485760, // 10MB
-            'allowed_file_types' => ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
-            'exam_retake_fee' => 150.00,
-            'disciplinary_hearing_days' => 30,
-            'appeal_period_days' => 14,
-            'notification_settings' => [
-                'email_enabled' => true,
-                'sms_enabled' => true,
-                'in_app_enabled' => true
+                [
+                    'name' => 'Application Submission',
+                    'type' => 'user_task',
+                    'assignee' => 'applicant',
+                    'form' => 'license_application_form'
+                ],
+                [
+                    'name' => 'Document Verification',
+                    'type' => 'user_task',
+                    'assignee' => 'document_verifier',
+                    'form' => 'document_verification_form'
+                ],
+                [
+                    'name' => 'Qualification Assessment',
+                    'type' => 'user_task',
+                    'assignee' => 'qualification_assessor',
+                    'form' => 'qualification_assessment_form'
+                ],
+                [
+                    'name' => 'Background Check',
+                    'type' => 'service_task',
+                    'service' => 'background_check_service'
+                ],
+                [
+                    'name' => 'Exam Scheduling',
+                    'type' => 'user_task',
+                    'assignee' => 'exam_coordinator',
+                    'form' => 'exam_scheduling_form'
+                ],
+                [
+                    'name' => 'Exam Administration',
+                    'type' => 'user_task',
+                    'assignee' => 'exam_officer',
+                    'form' => 'exam_administration_form'
+                ],
+                [
+                    'name' => 'Final Review',
+                    'type' => 'user_task',
+                    'assignee' => 'licensing_officer',
+                    'form' => 'final_review_form'
+                ],
+                [
+                    'name' => 'License Issuance',
+                    'type' => 'service_task',
+                    'service' => 'license_issuance_service'
+                ],
+                [
+                    'name' => 'Notification',
+                    'type' => 'user_task',
+                    'assignee' => 'applicant',
+                    'form' => 'license_notification_form'
+                ]
             ]
         ];
+
+        // Save workflow configurations
+        file_put_contents(__DIR__ . '/config/trade_workflow.json', json_encode($licenseApplicationWorkflow, JSON_PRETTY_PRINT));
     }
 
-    /**
-     * Initialize module
-     */
-    protected function initializeModule(): void
-    {
-        $this->initializeTradeTypes();
-        $this->initializeCertificationTypes();
-        $this->initializeCeRequirements();
-    }
-
-    /**
-     * Initialize trade types
-     */
-    private function initializeTradeTypes(): void
-    {
-        $this->tradeTypes = [
-            'electrical' => [
-                'code' => 'ELE',
-                'name' => 'Electrical',
-                'category' => 'construction',
-                'license_required' => true,
-                'insurance_required' => true,
-                'bond_required' => true,
-                'continuing_education_required' => true,
-                'education_hours_per_year' => 8,
-                'exam_required' => true,
-                'supervision_required' => false
-            ],
-            'plumbing' => [
-                'code' => 'PLU',
-                'name' => 'Plumbing',
-                'category' => 'construction',
-                'license_required' => true,
-                'insurance_required' => true,
-                'bond_required' => true,
-                'continuing_education_required' => true,
-                'education_hours_per_year' => 8,
-                'exam_required' => true,
-                'supervision_required' => false
-            ],
-            'hvac' => [
-                'code' => 'HVAC',
-                'name' => 'Heating, Ventilation, and Air Conditioning',
-                'category' => 'construction',
-                'license_required' => true,
-                'insurance_required' => true,
-                'bond_required' => false,
-                'continuing_education_required' => true,
-                'education_hours_per_year' => 6,
-                'exam_required' => true,
-                'supervision_required' => false
-            ],
-            'carpentry' => [
-                'code' => 'CAR',
-                'name' => 'Carpentry',
-                'category' => 'construction',
-                'license_required' => true,
-                'insurance_required' => true,
-                'bond_required' => false,
-                'continuing_education_required' => true,
-                'education_hours_per_year' => 4,
-                'exam_required' => false,
-                'supervision_required' => false
-            ],
-            'roofing' => [
-                'code' => 'ROO',
-                'name' => 'Roofing',
-                'category' => 'construction',
-                'license_required' => true,
-                'insurance_required' => true,
-                'bond_required' => true,
-                'continuing_education_required' => true,
-                'education_hours_per_year' => 4,
-                'exam_required' => false,
-                'supervision_required' => false
-            ],
-            'landscaping' => [
-                'code' => 'LAN',
-                'name' => 'Landscaping',
-                'category' => 'landscaping',
-                'license_required' => false,
-                'insurance_required' => true,
-                'bond_required' => false,
-                'continuing_education_required' => false,
-                'education_hours_per_year' => 0,
-                'exam_required' => false,
-                'supervision_required' => false
-            ],
-            'painting' => [
-                'code' => 'PAI',
-                'name' => 'Painting and Decorating',
-                'category' => 'finishing',
-                'license_required' => false,
-                'insurance_required' => true,
-                'bond_required' => false,
-                'continuing_education_required' => false,
-                'education_hours_per_year' => 0,
-                'exam_required' => false,
-                'supervision_required' => false
-            ]
+    private function createDirectories() {
+        $directories = [
+            __DIR__ . '/uploads/applications',
+            __DIR__ . '/uploads/certificates',
+            __DIR__ . '/uploads/exam_results',
+            __DIR__ . '/uploads/education_records',
+            __DIR__ . '/templates',
+            __DIR__ . '/config'
         ];
-    }
 
-    /**
-     * Initialize certification types
-     */
-    private function initializeCertificationTypes(): void
-    {
-        $this->certificationTypes = [
-            'osha_10' => [
-                'name' => 'OSHA 10-Hour Construction Safety',
-                'issuing_authority' => 'Occupational Safety and Health Administration',
-                'validity_years' => 5,
-                'renewable' => true
-            ],
-            'osha_30' => [
-                'name' => 'OSHA 30-Hour Construction Safety',
-                'issuing_authority' => 'Occupational Safety and Health Administration',
-                'validity_years' => 5,
-                'renewable' => true
-            ],
-            'first_aid_cpr' => [
-                'name' => 'First Aid and CPR Certification',
-                'issuing_authority' => 'American Red Cross / American Heart Association',
-                'validity_years' => 2,
-                'renewable' => true
-            ],
-            'epa_certification' => [
-                'name' => 'EPA Lead-Based Paint Certification',
-                'issuing_authority' => 'Environmental Protection Agency',
-                'validity_years' => 5,
-                'renewable' => true
-            ],
-            'asbestos_certification' => [
-                'name' => 'Asbestos Abatement Certification',
-                'issuing_authority' => 'Environmental Protection Agency',
-                'validity_years' => 5,
-                'renewable' => true
-            ]
-        ];
-    }
-
-    /**
-     * Initialize continuing education requirements
-     */
-    private function initializeCeRequirements(): void
-    {
-        $this->ceRequirements = [
-            'annual' => [
-                'frequency' => 'annual',
-                'minimum_hours' => 8,
-                'maximum_carryover' => 16,
-                'deadline_month' => 12
-            ],
-            'biennial' => [
-                'frequency' => 'biennial',
-                'minimum_hours' => 16,
-                'maximum_carryover' => 32,
-                'deadline_month' => 12
-            ]
-        ];
-    }
-
-    /**
-     * Create trade license application
-     */
-    public function createTradeLicenseApplication(array $applicationData): array
-    {
-        // Validate application data
-        $validation = $this->validateLicenseApplication($applicationData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
+        foreach ($directories as $dir) {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
         }
-
-        // Generate license number
-        $licenseNumber = $this->generateLicenseNumber();
-
-        // Calculate fees
-        $fees = $this->calculateLicenseFees($applicationData);
-
-        // Create application record
-        $application = [
-            'license_number' => $licenseNumber,
-            'applicant_id' => $applicationData['applicant_id'],
-            'trade_type' => $applicationData['trade_type'],
-            'license_class' => $applicationData['license_class'],
-            'status' => 'application_pending',
-            'application_date' => date('Y-m-d H:i:s'),
-            'fee_amount' => $fees['application_fee'],
-            'bond_amount' => $fees['bond_amount'],
-            'insurance_required' => $this->tradeTypes[$applicationData['trade_type']]['insurance_required'],
-            'supervisor_id' => $applicationData['supervisor_id'] ?? null,
-            'work_address' => $applicationData['work_address'] ?? '',
-            'specializations' => $applicationData['specializations'] ?? [],
-            'qualifications' => $applicationData['qualifications'] ?? [],
-            'documents' => $applicationData['documents'] ?? [],
-            'notes' => $applicationData['notes'] ?? ''
-        ];
-
-        // Save to database
-        $this->saveLicenseApplication($application);
-
-        // Start workflow
-        $this->startLicenseWorkflow($licenseNumber);
-
-        // Send notification
-        $this->sendNotification('application_submitted', $applicationData['applicant_id'], [
-            'license_number' => $licenseNumber
-        ]);
-
-        return [
-            'success' => true,
-            'license_number' => $licenseNumber,
-            'application_fee' => $fees['application_fee'],
-            'bond_amount' => $fees['bond_amount'],
-            'processing_time' => $this->config['application_processing_days'] . ' days'
-        ];
     }
 
-    /**
-     * Approve trade license application
-     */
-    public function approveTradeLicenseApplication(string $licenseNumber, array $approvalData = []): array
-    {
-        $license = $this->getTradeLicense($licenseNumber);
-        if (!$license) {
-            return [
-                'success' => false,
-                'error' => 'License not found'
-            ];
-        }
-
-        // Calculate expiry date (1 year from approval)
-        $expiryDate = date('Y-m-d H:i:s', strtotime('+1 year'));
-
-        // Update license status
-        $this->updateLicenseStatus($licenseNumber, 'approved', [
-            'approval_date' => date('Y-m-d H:i:s'),
-            'expiry_date' => $expiryDate
-        ]);
-
-        // Advance workflow
-        $this->advanceWorkflow($licenseNumber, 'approved');
-
-        // Send notification
-        $this->sendNotification('application_approved', $license['applicant_id'], [
-            'license_number' => $licenseNumber,
-            'trade_type' => $license['trade_type']
-        ]);
-
-        return [
-            'success' => true,
-            'license_number' => $licenseNumber,
-            'expiry_date' => $expiryDate,
-            'message' => 'License application approved successfully'
+    private function dropTables() {
+        $tables = [
+            'trade_renewals',
+            'trade_disciplinary_actions',
+            'trade_continuing_education',
+            'trade_exam_results',
+            'trade_exams',
+            'trade_qualifications',
+            'trade_licenses'
         ];
+
+        foreach ($tables as $table) {
+            $this->db->query("DROP TABLE IF EXISTS $table");
+        }
     }
 
-    /**
-     * Add certification to license
-     */
-    public function addCertification(array $certificationData): array
-    {
-        // Validate certification data
-        $validation = $this->validateCertificationData($certificationData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
-        }
-
-        // Create certification record
-        $certification = [
-            'license_id' => $certificationData['license_id'],
-            'certification_type' => $certificationData['certification_type'],
-            'certification_number' => $certificationData['certification_number'],
-            'issuing_authority' => $certificationData['issuing_authority'],
-            'issue_date' => $certificationData['issue_date'],
-            'expiry_date' => $certificationData['expiry_date'] ?? null,
-            'verification_status' => 'pending',
-            'document_path' => $certificationData['document_path'] ?? null,
-            'notes' => $certificationData['notes'] ?? ''
-        ];
-
-        // Save to database
-        $this->saveCertification($certification);
-
-        return [
-            'success' => true,
-            'certification_id' => $this->getLastInsertId(),
-            'message' => 'Certification added successfully'
-        ];
-    }
-
-    /**
-     * Add continuing education record
-     */
-    public function addContinuingEducation(array $ceData): array
-    {
-        // Validate CE data
-        $validation = $this->validateCeData($ceData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
-        }
-
-        // Create CE record
-        $ceRecord = [
-            'license_id' => $ceData['license_id'],
-            'course_name' => $ceData['course_name'],
-            'provider' => $ceData['provider'],
-            'course_type' => $ceData['course_type'],
-            'completion_date' => $ceData['completion_date'],
-            'credit_hours' => $ceData['credit_hours'],
-            'certificate_number' => $ceData['certificate_number'] ?? null,
-            'verification_status' => 'pending',
-            'document_path' => $ceData['document_path'] ?? null,
-            'notes' => $ceData['notes'] ?? ''
-        ];
-
-        // Save to database
-        $this->saveContinuingEducation($ceRecord);
-
-        return [
-            'success' => true,
-            'ce_id' => $this->getLastInsertId(),
-            'message' => 'Continuing education record added successfully'
-        ];
-    }
-
-    /**
-     * Create disciplinary action
-     */
-    public function createDisciplinaryAction(array $disciplinaryData): array
-    {
-        // Validate disciplinary data
-        $validation = $this->validateDisciplinaryData($disciplinaryData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
-        }
-
-        // Get license information
-        $license = $this->getTradeLicense($disciplinaryData['license_number']);
-        if (!$license) {
-            return [
-                'success' => false,
-                'error' => 'License not found'
-            ];
-        }
-
-        // Create disciplinary record
-        $disciplinary = [
-            'license_id' => $license['id'],
-            'action_type' => $disciplinaryData['action_type'],
-            'violation_description' => $disciplinaryData['violation_description'],
-            'action_date' => date('Y-m-d'),
-            'effective_date' => $disciplinaryData['effective_date'] ?? date('Y-m-d'),
-            'end_date' => $disciplinaryData['end_date'] ?? null,
-            'fine_amount' => $disciplinaryData['fine_amount'] ?? 0.00,
-            'investigator_id' => $disciplinaryData['investigator_id'],
-            'hearing_date' => $disciplinaryData['hearing_date'] ?? null,
-            'status' => 'pending',
-            'documents' => $disciplinaryData['documents'] ?? [],
-            'notes' => $disciplinaryData['notes'] ?? ''
-        ];
-
-        // Save to database
-        $this->saveDisciplinaryAction($disciplinary);
-
-        // Update license status if suspension or revocation
-        if (in_array($disciplinaryData['action_type'], ['suspension', 'revocation'])) {
-            $this->updateLicenseStatus($disciplinaryData['license_number'], $disciplinaryData['action_type'] === 'suspension' ? 'suspended' : 'revoked');
-        }
-
-        // Send notification
-        $this->sendNotification('disciplinary_notice', $license['applicant_id'], [
-            'action_type' => $disciplinaryData['action_type'],
-            'hearing_date' => $disciplinaryData['hearing_date'] ?? 'TBD'
-        ]);
-
-        return [
-            'success' => true,
-            'disciplinary_id' => $this->getLastInsertId(),
-            'message' => 'Disciplinary action created successfully'
-        ];
-    }
-
-    /**
-     * Renew trade license
-     */
-    public function renewTradeLicense(string $licenseNumber, array $renewalData = []): array
-    {
-        $license = $this->getTradeLicense($licenseNumber);
-        if (!$license) {
-            return [
-                'success' => false,
-                'error' => 'License not found'
-            ];
-        }
-
-        // Check if renewal is allowed
-        if (!$this->canRenewLicense($license)) {
-            return [
-                'success' => false,
-                'error' => 'License cannot be renewed at this time'
-            ];
-        }
-
-        // Check continuing education compliance
-        $ceCompliance = $this->checkCeCompliance($licenseNumber);
-        if (!$ceCompliance['compliant']) {
-            return [
-                'success' => false,
-                'error' => 'Continuing education requirements not met',
-                'ce_details' => $ceCompliance
-            ];
-        }
-
-        // Calculate renewal fee
-        $renewalFee = $this->calculateRenewalFee($license);
-
-        // Create renewal record
-        $renewal = [
-            'license_id' => $license['id'],
-            'renewal_period_start' => $license['expiry_date'],
-            'renewal_period_end' => date('Y-m-d H:i:s', strtotime($license['expiry_date'] . ' +1 year')),
-            'renewal_fee' => $renewalFee,
-            'continuing_education_completed' => true,
-            'insurance_verified' => $renewalData['insurance_verified'] ?? false,
-            'status' => 'pending'
-        ];
-
-        // Save renewal record
-        $this->saveRenewalRecord($renewal);
-
-        return [
-            'success' => true,
-            'renewal_id' => $this->getLastInsertId(),
-            'renewal_fee' => $renewalFee,
-            'message' => 'License renewal initiated successfully'
-        ];
-    }
-
-    /**
-     * Get trade licenses (API handler)
-     */
-    public function getTradeLicenses(array $filters = []): array
-    {
+    // API Methods
+    public function createLicenseApplication($data) {
         try {
-            $db = Database::getInstance();
+            $this->validateLicenseApplicationData($data);
+            $licenseNumber = $this->generateLicenseNumber();
 
+            $sql = "INSERT INTO trade_licenses (
+                license_number, applicant_id, applicant_name, applicant_email,
+                applicant_phone, date_of_birth, address, trade_category,
+                trade_specialty, license_type, license_class, qualification_level,
+                institution_name, qualification_date, experience_years,
+                application_date, application_fee, qualification_documents,
+                identity_documents, experience_documents, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $licenseId = $this->db->insert($sql, [
+                $licenseNumber, $data['applicant_id'] ?? null, $data['applicant_name'],
+                $data['applicant_email'] ?? null, $data['applicant_phone'] ?? null,
+                $data['date_of_birth'] ?? null, $data['address'] ?? null,
+                $data['trade_category'], $data['trade_specialty'] ?? null,
+                $data['license_type'] ?? 'full', $data['license_class'] ?? null,
+                $data['qualification_level'] ?? 'certificate', $data['institution_name'] ?? null,
+                $data['qualification_date'] ?? null, $data['experience_years'] ?? 0,
+                $data['application_date'], $data['application_fee'] ?? 0,
+                json_encode($data['qualification_documents'] ?? []),
+                json_encode($data['identity_documents'] ?? []),
+                json_encode($data['experience_documents'] ?? []),
+                $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'license_id' => $licenseId,
+                'license_number' => $licenseNumber
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function updateLicenseStatus($licenseId, $status, $data = []) {
+        try {
+            $updateFields = ['license_status = ?'];
+            $params = [$status];
+
+            if ($status === 'approved' && isset($data['approval_date'])) {
+                $updateFields[] = 'approval_date = ?';
+                $params[] = $data['approval_date'];
+
+                if (isset($data['expiry_date'])) {
+                    $updateFields[] = 'expiry_date = ?';
+                    $params[] = $data['expiry_date'];
+                }
+            }
+
+            if ($status === 'suspended' && isset($data['suspension_date'])) {
+                $updateFields[] = 'suspension_date = ?';
+                $params[] = $data['suspension_date'];
+
+                if (isset($data['suspension_reason'])) {
+                    $updateFields[] = 'suspension_reason = ?';
+                    $params[] = $data['suspension_reason'];
+                }
+            }
+
+            if (isset($data['reviewer_id'])) {
+                $updateFields[] = 'reviewer_id = ?';
+                $params[] = $data['reviewer_id'];
+            }
+
+            if (isset($data['review_date'])) {
+                $updateFields[] = 'review_date = ?';
+                $params[] = $data['review_date'];
+            }
+
+            if (isset($data['review_notes'])) {
+                $updateFields[] = 'review_notes = ?';
+                $params[] = $data['review_notes'];
+            }
+
+            $updateFields[] = 'updated_at = CURRENT_TIMESTAMP';
+
+            $sql = "UPDATE trade_licenses SET " . implode(', ', $updateFields) . " WHERE id = ?";
+            $params[] = $licenseId;
+
+            $this->db->query($sql, $params);
+
+            return [
+                'success' => true,
+                'message' => 'License status updated successfully'
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function createQualification($data) {
+        try {
+            $this->validateQualificationData($data);
+            $qualificationCode = $this->generateQualificationCode();
+
+            $sql = "INSERT INTO trade_qualifications (
+                qualification_code, trade_category, qualification_name,
+                qualification_description, qualification_level, minimum_age,
+                minimum_education, required_experience_years, required_training_hours,
+                prerequisite_qualifications, required_exams, validity_years,
+                renewal_requirements, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $qualificationId = $this->db->insert($sql, [
+                $qualificationCode, $data['trade_category'], $data['qualification_name'],
+                $data['qualification_description'] ?? null, $data['qualification_level'] ?? 'entry',
+                $data['minimum_age'] ?? 18, $data['minimum_education'] ?? null,
+                $data['required_experience_years'] ?? 0, $data['required_training_hours'] ?? 0,
+                json_encode($data['prerequisite_qualifications'] ?? []),
+                json_encode($data['required_exams'] ?? []), $data['validity_years'] ?? 5,
+                json_encode($data['renewal_requirements'] ?? []), $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'qualification_id' => $qualificationId,
+                'qualification_code' => $qualificationCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function createExam($data) {
+        try {
+            $this->validateExamData($data);
+            $examCode = $this->generateExamCode();
+
+            $sql = "INSERT INTO trade_exams (
+                exam_code, exam_name, trade_category, exam_type,
+                exam_level, exam_duration_minutes, passing_score,
+                max_attempts, exam_fee, retake_fee, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $examId = $this->db->insert($sql, [
+                $examCode, $data['exam_name'], $data['trade_category'],
+                $data['exam_type'] ?? 'written', $data['exam_level'] ?? 'entry',
+                $data['exam_duration_minutes'] ?? 120, $data['passing_score'] ?? 70.00,
+                $data['max_attempts'] ?? 3, $data['exam_fee'] ?? 0,
+                $data['retake_fee'] ?? 0, $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'exam_id' => $examId,
+                'exam_code' => $examCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function recordExamResult($data) {
+        try {
+            $this->validateExamResultData($data);
+            $resultCode = $this->generateResultCode();
+
+            $sql = "INSERT INTO trade_exam_results (
+                result_code, license_id, exam_id, exam_date, exam_score,
+                passing_score, result_status, attempt_number, max_attempts,
+                examiner_name, examiner_notes, certificate_issued,
+                certificate_number, certificate_date, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $resultId = $this->db->insert($sql, [
+                $resultCode, $data['license_id'], $data['exam_id'], $data['exam_date'],
+                $data['exam_score'], $data['passing_score'], $data['result_status'],
+                $data['attempt_number'] ?? 1, $data['max_attempts'] ?? 3,
+                $data['examiner_name'] ?? null, $data['examiner_notes'] ?? null,
+                $data['certificate_issued'] ?? false, $data['certificate_number'] ?? null,
+                $data['certificate_date'] ?? null, $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'result_id' => $resultId,
+                'result_code' => $resultCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function addContinuingEducation($data) {
+        try {
+            $this->validateContinuingEducationData($data);
+            $educationCode = $this->generateEducationCode();
+
+            $sql = "INSERT INTO trade_continuing_education (
+                education_code, license_id, course_name, course_provider,
+                course_type, course_date, completion_date, course_hours,
+                course_description, verification_method, verification_document,
+                education_status, renewal_credits, credit_expiry_date, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $educationId = $this->db->insert($sql, [
+                $educationCode, $data['license_id'], $data['course_name'],
+                $data['course_provider'], $data['course_type'] ?? 'workshop',
+                $data['course_date'], $data['completion_date'] ?? null,
+                $data['course_hours'], $data['course_description'] ?? null,
+                $data['verification_method'] ?? 'certificate',
+                $data['verification_document'] ?? null, $data['education_status'] ?? 'completed',
+                $data['renewal_credits'] ?? $data['course_hours'],
+                $data['credit_expiry_date'] ?? null, $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'education_id' => $educationId,
+                'education_code' => $educationCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function createDisciplinaryAction($data) {
+        try {
+            $this->validateDisciplinaryActionData($data);
+            $actionCode = $this->generateActionCode();
+
+            $sql = "INSERT INTO trade_disciplinary_actions (
+                action_code, license_id, action_type, action_date,
+                effective_date, violation_description, violation_code,
+                severity_level, suspension_period_days, fine_amount,
+                action_description, action_officer, action_status, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $actionId = $this->db->insert($sql, [
+                $actionCode, $data['license_id'], $data['action_type'],
+                $data['action_date'], $data['effective_date'] ?? null,
+                $data['violation_description'], $data['violation_code'] ?? null,
+                $data['severity_level'] ?? 'moderate', $data['suspension_period_days'] ?? null,
+                $data['fine_amount'] ?? 0, $data['action_description'] ?? null,
+                $data['action_officer'] ?? null, $data['action_status'] ?? 'active',
+                $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'action_id' => $actionId,
+                'action_code' => $actionCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function createRenewalRecord($data) {
+        try {
+            $this->validateRenewalData($data);
+            $renewalCode = $this->generateRenewalCode();
+
+            $sql = "INSERT INTO trade_renewals (
+                renewal_code, license_id, renewal_period_start, renewal_period_end,
+                renewal_due_date, continuing_education_completed, required_credits_earned,
+                required_credits_needed, renewal_fee, late_fee, total_amount,
+                payment_status, renewal_status, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $renewalId = $this->db->insert($sql, [
+                $renewalCode, $data['license_id'], $data['renewal_period_start'],
+                $data['renewal_period_end'], $data['renewal_due_date'],
+                $data['continuing_education_completed'] ?? false,
+                $data['required_credits_earned'] ?? 0, $data['required_credits_needed'] ?? 0,
+                $data['renewal_fee'] ?? 0, $data['late_fee'] ?? 0,
+                $data['total_amount'] ?? 0, $data['payment_status'] ?? 'pending',
+                $data['renewal_status'] ?? 'pending', $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'renewal_id' => $renewalId,
+                'renewal_code' => $renewalCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    // Validation Methods
+    private function validateLicenseApplicationData($data) {
+        if (empty($data['applicant_name'])) {
+            throw new Exception('Applicant name is required');
+        }
+        if (empty($data['trade_category'])) {
+            throw new Exception('Trade category is required');
+        }
+        if (empty($data['application_date'])) {
+            throw new Exception('Application date is required');
+        }
+    }
+
+    private function validateQualificationData($data) {
+        if (empty($data['trade_category'])) {
+            throw new Exception('Trade category is required');
+        }
+        if (empty($data['qualification_name'])) {
+            throw new Exception('Qualification name is required');
+        }
+    }
+
+    private function validateExamData($data) {
+        if (empty($data['exam_name'])) {
+            throw new Exception('Exam name is required');
+        }
+        if (empty($data['trade_category'])) {
+            throw new Exception('Trade category is required');
+        }
+    }
+
+    private function validateExamResultData($data) {
+        if (empty($data['license_id'])) {
+            throw new Exception('License ID is required');
+        }
+        if (empty($data['exam_id'])) {
+            throw new Exception('Exam ID is required');
+        }
+        if (empty($data['exam_date'])) {
+            throw new Exception('Exam date is required');
+        }
+        if (!isset($data['exam_score'])) {
+            throw new Exception('Exam score is required');
+        }
+    }
+
+    private function validateContinuingEducationData($data) {
+        if (empty($data['license_id'])) {
+            throw new Exception('License ID is required');
+        }
+        if (empty($data['course_name'])) {
+            throw new Exception('Course name is required');
+        }
+        if (empty($data['course_provider'])) {
+            throw new Exception('Course provider is required');
+        }
+        if (empty($data['course_date'])) {
+            throw new Exception('Course date is required');
+        }
+        if (empty($data['course_hours'])) {
+            throw new Exception('Course hours is required');
+        }
+    }
+
+    private function validateDisciplinaryActionData($data) {
+        if (empty($data['license_id'])) {
+            throw new Exception('License ID is required');
+        }
+        if (empty($data['action_type'])) {
+            throw new Exception('Action type is required');
+        }
+        if (empty($data['action_date'])) {
+            throw new Exception('Action date is required');
+        }
+        if (empty($data['violation_description'])) {
+            throw new Exception('Violation description is required');
+        }
+    }
+
+    private function validateRenewalData($data) {
+        if (empty($data['license_id'])) {
+            throw new Exception('License ID is required');
+        }
+        if (empty($data['renewal_period_start'])) {
+            throw new Exception('Renewal period start date is required');
+        }
+        if (empty($data['renewal_period_end'])) {
+            throw new Exception('Renewal period end date is required');
+        }
+        if (empty($data['renewal_due_date'])) {
+            throw new Exception('Renewal due date is required');
+        }
+    }
+
+    // Code Generation Methods
+    private function generateLicenseNumber() {
+        return 'TL-' . date('Y') . '-' . str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
+    }
+
+    private function generateQualificationCode() {
+        return 'QUAL-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateExamCode() {
+        return 'EXAM-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateResultCode() {
+        return 'RESULT-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateEducationCode() {
+        return 'EDU-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateActionCode() {
+        return 'ACTION-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateRenewalCode() {
+        return 'RENEW-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    // Additional API Methods
+    public function getLicenseDetails($licenseNumber) {
+        try {
+            $sql = "SELECT * FROM trade_licenses WHERE license_number = ?";
+            $license = $this->db->query($sql, [$licenseNumber])->fetch(PDO::FETCH_ASSOC);
+
+            if ($license) {
+                $license['qualification_documents'] = json_decode($license['qualification_documents'], true);
+                $license['identity_documents'] = json_decode($license['identity_documents'], true);
+                $license['experience_documents'] = json_decode($license['experience_documents'], true);
+            }
+
+            return $license;
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getLicensesByStatus($status, $limit = 100) {
+        try {
+            $sql = "SELECT * FROM trade_licenses WHERE license_status = ? ORDER BY application_date DESC LIMIT ?";
+            return $this->db->query($sql, [$status, $limit])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getExpiringLicenses($daysAhead = 30) {
+        try {
+            $sql = "SELECT * FROM trade_licenses
+                    WHERE license_status = 'active'
+                    AND expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                    ORDER BY expiry_date ASC";
+
+            return $this->db->query($sql, [$daysAhead])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getQualificationsByTrade($tradeCategory) {
+        try {
+            $sql = "SELECT * FROM trade_qualifications
+                    WHERE trade_category = ? AND qualification_status = 'active'
+                    ORDER BY qualification_level ASC";
+
+            return $this->db->query($sql, [$tradeCategory])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getExamResults($licenseId) {
+        try {
+            $sql = "SELECT ter.*, te.exam_name, te.exam_type
+                    FROM trade_exam_results ter
+                    JOIN trade_exams te ON ter.exam_id = te.id
+                    WHERE ter.license_id = ?
+                    ORDER BY ter.exam_date DESC";
+
+            return $this->db->query($sql, [$licenseId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getContinuingEducation($licenseId) {
+        try {
+            $sql = "SELECT * FROM trade_continuing_education
+                    WHERE license_id = ?
+                    ORDER BY course_date DESC";
+
+            return $this->db->query($sql, [$licenseId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getDisciplinaryHistory($licenseId) {
+        try {
+            $sql = "SELECT * FROM trade_disciplinary_actions
+                    WHERE license_id = ?
+                    ORDER BY action_date DESC";
+
+            return $this->db->query($sql, [$licenseId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getRenewalHistory($licenseId) {
+        try {
+            $sql = "SELECT * FROM trade_renewals
+                    WHERE license_id = ?
+                    ORDER BY renewal_period_start DESC";
+
+            return $this->db->query($sql, [$licenseId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function searchLicenses($filters = []) {
+        try {
             $sql = "SELECT * FROM trade_licenses WHERE 1=1";
             $params = [];
 
-            if (isset($filters['status'])) {
-                $sql .= " AND status = ?";
-                $params[] = $filters['status'];
+            if (!empty($filters['trade_category'])) {
+                $sql .= " AND trade_category = ?";
+                $params[] = $filters['trade_category'];
             }
 
-            if (isset($filters['trade_type'])) {
-                $sql .= " AND trade_type = ?";
-                $params[] = $filters['trade_type'];
+            if (!empty($filters['license_status'])) {
+                $sql .= " AND license_status = ?";
+                $params[] = $filters['license_status'];
             }
 
-            if (isset($filters['applicant_id'])) {
-                $sql .= " AND applicant_id = ?";
-                $params[] = $filters['applicant_id'];
+            if (!empty($filters['applicant_name'])) {
+                $sql .= " AND applicant_name LIKE ?";
+                $params[] = '%' . $filters['applicant_name'] . '%';
             }
 
-            $sql .= " ORDER BY created_at DESC";
+            $sql .= " ORDER BY application_date DESC LIMIT 100";
 
-            $results = $db->fetchAll($sql, $params);
+            return $this->db->query($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
 
-            // Decode JSON fields
-            foreach ($results as &$result) {
-                $result['specializations'] = json_decode($result['specializations'], true);
-                $result['qualifications'] = json_decode($result['qualifications'], true);
-                $result['documents'] = json_decode($result['documents'], true);
-            }
-
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting trade licenses: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve trade licenses'
-            ];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
-    /**
-     * Get trade license (API handler)
-     */
-    public function getTradeLicense(string $licenseNumber): array
-    {
-        $license = $this->getTradeLicense($licenseNumber);
-
-        if (!$license) {
-            return [
-                'success' => false,
-                'error' => 'License not found'
-            ];
+    private function loadConfig() {
+        $configFile = __DIR__ . '/config/module_config.json';
+        if (file_exists($configFile)) {
+            return json_decode(file_get_contents($configFile), true);
         }
-
         return [
-            'success' => true,
-            'data' => $license
+            'database_table_prefix' => 'trade_',
+            'upload_path' => __DIR__ . '/uploads/',
+            'max_file_size' => 10 * 1024 * 1024, // 10MB
+            'allowed_file_types' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'],
+            'notification_email' => 'admin@example.com',
+            'currency' => 'USD',
+            'default_fees' => [
+                'application_fee' => 50.00,
+                'license_fee' => 100.00,
+                'renewal_fee' => 75.00,
+                'exam_fee' => 25.00,
+                'retake_fee' => 15.00
+            ],
+            'trade_categories' => [
+                'electrical', 'plumbing', 'carpentry', 'masonry', 'painting',
+                'roofing', 'hvac', 'landscaping', 'automotive', 'welding'
+            ]
         ];
     }
 
-    /**
-     * Create trade license (API handler)
-     */
-    public function createTradeLicense(array $data): array
-    {
-        return $this->createTradeLicenseApplication($data);
+    // Utility Methods
+    public function formatCurrency($amount) {
+        return number_format($amount, 2, '.', ',') . ' ' . $this->config['currency'];
     }
 
-    /**
-     * Update trade license (API handler)
-     */
-    public function updateTradeLicense(string $licenseNumber, array $data): array
-    {
-        try {
-            $license = $this->getTradeLicense($licenseNumber);
-
-            if (!$license) {
-                return [
-                    'success' => false,
-                    'error' => 'License not found'
-                ];
-            }
-
-            if ($license['status'] !== 'application_pending') {
-                return [
-                    'success' => false,
-                    'error' => 'License cannot be modified'
-                ];
-            }
-
-            $this->updateLicense($licenseNumber, $data);
-
-            return [
-                'success' => true,
-                'message' => 'License updated successfully'
-            ];
-        } catch (\Exception $e) {
-            error_log("Error updating license: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to update license'
-            ];
-        }
-    }
-
-    /**
-     * Approve trade license (API handler)
-     */
-    public function approveTradeLicense(string $licenseNumber, array $approvalData): array
-    {
-        return $this->approveTradeLicenseApplication($licenseNumber, $approvalData);
-    }
-
-    /**
-     * Renew trade license (API handler)
-     */
-    public function renewTradeLicense(string $licenseNumber, array $renewalData): array
-    {
-        return $this->renewTradeLicense($licenseNumber, $renewalData);
-    }
-
-    /**
-     * Get certifications (API handler)
-     */
-    public function getCertifications(array $filters = []): array
-    {
-        try {
-            $db = Database::getInstance();
-
-            $sql = "SELECT * FROM trade_certifications WHERE 1=1";
-            $params = [];
-
-            if (isset($filters['license_id'])) {
-                $sql .= " AND license_id = ?";
-                $params[] = $filters['license_id'];
-            }
-
-            if (isset($filters['certification_type'])) {
-                $sql .= " AND certification_type = ?";
-                $params[] = $filters['certification_type'];
-            }
-
-            if (isset($filters['verification_status'])) {
-                $sql .= " AND verification_status = ?";
-                $params[] = $filters['verification_status'];
-            }
-
-            $sql .= " ORDER BY created_at DESC";
-
-            $results = $db->fetchAll($sql, $params);
-
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting certifications: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve certifications'
-            ];
-        }
-    }
-
-    /**
-     * Add certification (API handler)
-     */
-    public function addCertification(array $data): array
-    {
-        return $this->addCertification($data);
-    }
-
-    /**
-     * Get continuing education (API handler)
-     */
-    public function getContinuingEducation(array $filters = []): array
-    {
-        try {
-            $db = Database::getInstance();
-
-            $sql = "SELECT * FROM continuing_education WHERE 1=1";
-            $params = [];
-
-            if (isset($filters['license_id'])) {
-                $sql .= " AND license_id = ?";
-                $params[] = $filters['license_id'];
-            }
-
-            if (isset($filters['verification_status'])) {
-                $sql .= " AND verification_status = ?";
-                $params[] = $filters['verification_status'];
-            }
-
-            if (isset($filters['course_type'])) {
-                $sql .= " AND course_type = ?";
-                $params[] = $filters['course_type'];
-            }
-
-            $sql .= " ORDER BY completion_date DESC";
-
-            $results = $db->fetchAll($sql, $params);
-
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting continuing education: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve continuing education records'
-            ];
-        }
-    }
-
-    /**
-     * Add continuing education (API handler)
-     */
-    public function addContinuingEducation(array $data): array
-    {
-        return $this->addContinuingEducation($data);
-    }
-
-    /**
-     * Get disciplinary actions (API handler)
-     */
-    public function getDisciplinaryActions(array $filters = []): array
-    {
-        try {
-            $db = Database::getInstance();
-
-            $sql = "SELECT * FROM disciplinary_actions WHERE 1=1";
-            $params = [];
-
-            if (isset($filters['license_id'])) {
-                $sql .= " AND license_id = ?";
-                $params[] = $filters['license_id'];
-            }
-
-            if (isset($filters['action_type'])) {
-                $sql .= " AND action_type = ?";
-                $params[] = $filters['action_type'];
-            }
-
-            if (isset($filters['status'])) {
-                $sql .= " AND status = ?";
-                $params[] = $filters['status'];
-            }
-
-            $sql .= " ORDER BY action_date DESC";
-
-            $results = $db->fetchAll($sql, $params);
-
-            // Decode JSON fields
-            foreach ($results as &$result) {
-                $result['documents'] = json_decode($result['documents'], true);
-            }
-
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting disciplinary actions: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve disciplinary actions'
-            ];
-        }
-    }
-
-    /**
-     * Create disciplinary action (API handler)
-     */
-    public function createDisciplinaryAction(array $data): array
-    {
-        return $this->createDisciplinaryAction($data);
-    }
-
-    /**
-     * Validate license application data
-     */
-    private function validateLicenseApplication(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'applicant_id', 'trade_type', 'license_class'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
+    public function validateFileUpload($file) {
+        if ($file['size'] > $this->config['max_file_size']) {
+            return ['valid' => false, 'error' => 'File size exceeds maximum allowed size'];
         }
 
-        if (!isset($this->tradeTypes[$data['trade_type'] ?? ''])) {
-            $errors[] = "Invalid trade type";
+        $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($extension, $this->config['allowed_file_types'])) {
+            return ['valid' => false, 'error' => 'File type not allowed'];
         }
 
-        if (!in_array($data['license_class'] ?? '', ['apprentice', 'journeyman', 'master', 'specialist'])) {
-            $errors[] = "Invalid license class";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
+        return ['valid' => true];
     }
 
-    /**
-     * Validate certification data
-     */
-    private function validateCertificationData(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'license_id', 'certification_type', 'certification_number',
-            'issuing_authority', 'issue_date'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
-        }
-
-        if (!isset($this->certificationTypes[$data['certification_type'] ?? ''])) {
-            $errors[] = "Invalid certification type";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Validate continuing education data
-     */
-    private function validateCeData(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'license_id', 'course_name', 'provider', 'course_type',
-            'completion_date', 'credit_hours'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
-        }
-
-        if (!is_numeric($data['credit_hours']) || $data['credit_hours'] <= 0) {
-            $errors[] = "Credit hours must be a positive number";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Validate disciplinary data
-     */
-    private function validateDisciplinaryData(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'license_number', 'action_type', 'violation_description', 'investigator_id'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
-        }
-
-        if (!in_array($data['action_type'] ?? '', ['warning', 'fine', 'suspension', 'revocation', 'probation'])) {
-            $errors[] = "Invalid action type";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Generate license number
-     */
-    private function generateLicenseNumber(): string
-    {
-        return 'TL' . date('Y') . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Calculate license fees
-     */
-    private function calculateLicenseFees(array $applicationData): array
-    {
-        $tradeType = $this->tradeTypes[$applicationData['trade_type']];
-        $licenseClass = $applicationData['license_class'];
-
-        // Base fees by license class
-        $baseFees = [
-            'apprentice' => 100.00,
-            'journeyman' => 250.00,
-            'master' => 500.00,
-            'specialist' => 750.00
-        ];
-
-        $applicationFee = $baseFees[$licenseClass] ?? 250.00;
-
-        // Bond amount (if required)
-        $bondAmount = $tradeType['bond_required'] ? 10000.00 : 0.00;
-
-        return [
-            'application_fee' => $applicationFee,
-            'bond_amount' => $bondAmount
-        ];
-    }
-
-    /**
-     * Calculate renewal fee
-     */
-    private function calculateRenewalFee(array $license): float
-    {
-        $tradeType = $this->tradeTypes[$license['trade_type']];
-
-        // Renewal fee is typically 50% of application fee
-        $fees = $this->calculateLicenseFees([
-            'trade_type' => $license['trade_type'],
-            'license_class' => $license['license_class']
-        ]);
-
-        return $fees['application_fee'] * 0.5;
-    }
-
-    /**
-     * Check if license can be renewed
-     */
-    private function canRenewLicense(array $license): bool
-    {
-        $currentDate = date('Y-m-d');
-        $expiryDate = $license['expiry_date'];
-
-        // Allow renewal up to 90 days after expiry
-        $renewalDeadline = date('Y-m-d', strtotime($expiryDate . ' +90 days'));
-
-        return $currentDate <= $renewalDeadline && !in_array($license['status'], ['revoked', 'suspended']);
-    }
-
-    /**
-     * Check continuing education compliance
-     */
-    private function checkCeCompliance(string $licenseNumber): array
-    {
-        $license = $this->getTradeLicense($licenseNumber);
-        if (!$license) {
-            return ['compliant' => false, 'error' => 'License not found'];
-        }
-
-        $tradeType = $this->tradeTypes[$license['trade_type']];
-        if (!$tradeType['continuing_education_required']) {
-            return ['compliant' => true];
-        }
-
-        // Get CE hours for the current year
-        $currentYear = date('Y');
-        $ceHours = $this->getCeHoursForYear($license['id'], $currentYear);
-
-        $requiredHours = $tradeType['education_hours_per_year'];
-
-        return [
-            'compliant' => $ceHours >= $requiredHours,
-            'required_hours' => $requiredHours,
-            'completed_hours' => $ceHours,
-            'deficit' => max(0, $requiredHours - $ceHours)
-        ];
-    }
-
-    /**
-     * Get CE hours for a specific year
-     */
-    private function getCeHoursForYear(int $licenseId, int $year): float
-    {
-        try {
-            $db = Database::getInstance();
-
-            $sql = "SELECT SUM(credit_hours) as total_hours FROM continuing_education
-                    WHERE license_id = ? AND YEAR(completion_date) = ? AND verification_status = 'verified'";
-
-            $result = $db->fetch($sql, [$licenseId, $year]);
-
-            return (float) ($result['total_hours'] ?? 0);
-        } catch (\Exception $e) {
-            error_log("Error getting CE hours: " . $e->getMessage());
-            return 0.0;
-        }
-    }
-
-    /**
-     * Placeholder methods (would be implemented with actual database operations)
-     */
-    private function saveLicenseApplication(array $application): bool { return true; }
-    private function startLicenseWorkflow(string $licenseNumber): bool { return true; }
-    private function sendNotification(string $type, ?int $userId, array $data): bool { return true; }
-    private function getTradeLicense(string $licenseNumber): ?array { return null; }
-    private function updateLicenseStatus(string $licenseNumber, string $status, array $additionalData = []): bool { return true; }
-    private function advanceWorkflow(string $licenseNumber, string $step): bool { return true; }
-    private function updateLicense(string $licenseNumber, array $data): bool { return true; }
-    private function saveCertification(array $certification): bool { return true; }
-    private function saveContinuingEducation(array $ceRecord): bool { return true; }
-    private function saveDisciplinaryAction(array $disciplinary): bool { return true; }
-    private function saveRenewalRecord(array $renewal): bool { return true; }
-    private function getLastInsertId(): int { return mt_rand(1, 999999); }
-
-    /**
-     * Get module statistics
-     */
-    public function getModuleStatistics(): array
-    {
-        return [
-            'total_applications' => 0, // Would query database
-            'approved_licenses' => 0,
-            'pending_applications' => 0,
-            'active_licenses' => 0,
-            'expired_licenses' => 0,
-            'suspended_licenses' => 0,
-            'revoked_licenses' => 0,
-            'total_certifications' => 0,
-            'ce_compliance_rate' => 0.0,
-            'disciplinary_actions' => 0
-        ];
+    public function sendNotification($type, $recipient, $data) {
+        // Implementation would integrate with NotificationManager
+        // This is a placeholder for the notification system
+        return true;
     }
 }

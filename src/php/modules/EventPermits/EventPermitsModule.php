@@ -1,1537 +1,1350 @@
 <?php
 /**
- * TPT Government Platform - Event Permits Module
+ * Event Permits Module
+ * Handles event application forms, risk assessment workflow, and public notification system
  *
- * Comprehensive event permitting and management system
- * supporting event applications, risk assessment, public notifications, and compliance
+ * @package TPTGovernment\Modules\EventPermits
+ * @version 1.0.0
+ * @author TPT Government System
  */
 
-namespace Modules\EventPermits;
+require_once __DIR__ . '/../ServiceModule.php';
 
-use Modules\ServiceModule;
-use Core\Database;
-use Core\WorkflowEngine;
-use Core\NotificationManager;
-use Core\PaymentGateway;
+class EventPermitsModule extends ServiceModule {
+    private Database $db;
+    private array $config;
+    private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    private const ALLOWED_FILE_TYPES = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'];
 
-class EventPermitsModule extends ServiceModule
-{
-    /**
-     * Module metadata
-     */
-    protected array $metadata = [
-        'name' => 'Event Permits',
-        'version' => '2.1.0',
-        'description' => 'Comprehensive event permitting and management system',
-        'author' => 'TPT Government Platform',
-        'category' => 'public_services',
-        'dependencies' => ['database', 'workflow', 'payment', 'notification']
-    ];
+    public function __construct(Database $db = null) {
+        parent::__construct();
+        $this->db = $db ?: new Database();
+        $this->config = $this->loadConfig();
+    }
 
-    /**
-     * Module dependencies
-     */
-    protected array $dependencies = [
-        ['name' => 'Database', 'version' => '>=1.0.0'],
-        ['name' => 'WorkflowEngine', 'version' => '>=1.0.0'],
-        ['name' => 'PaymentGateway', 'version' => '>=1.0.0'],
-        ['name' => 'NotificationManager', 'version' => '>=1.0.0']
-    ];
+    public function getModuleInfo() {
+        return [
+            'name' => 'Event Permits Module',
+            'version' => '1.0.0',
+            'description' => 'Comprehensive event permitting system including application processing, risk assessment, public notification, insurance verification, and permit tracking',
+            'dependencies' => ['IdentityServices', 'FinancialManagement', 'RecordsManagement'],
+            'permissions' => [
+                'event.view' => 'View event permit information',
+                'event.apply' => 'Apply for event permits',
+                'event.manage' => 'Manage event permit applications',
+                'event.admin' => 'Administrative functions for event permitting'
+            ]
+        ];
+    }
 
-    /**
-     * Module permissions
-     */
-    protected array $permissions = [
-        'event_permits.view' => 'View event permit applications',
-        'event_permits.create' => 'Create new event permit applications',
-        'event_permits.edit' => 'Edit event permit applications',
-        'event_permits.approve' => 'Approve event permit applications',
-        'event_permits.reject' => 'Reject event permit applications',
-        'event_permits.schedule' => 'Schedule and manage event permits',
-        'event_permits.inspect' => 'Conduct event inspections',
-        'event_permits.cancel' => 'Cancel event permits',
-        'event_permits.report' => 'Generate event permit reports'
-    ];
+    public function install() {
+        $this->createTables();
+        $this->setupWorkflows();
+        $this->createDirectories();
+        return true;
+    }
 
-    /**
-     * Module database tables
-     */
-    protected array $tables = [
-        'event_permits' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_number' => 'VARCHAR(20) UNIQUE NOT NULL',
-            'applicant_id' => 'INT NOT NULL',
-            'event_name' => 'VARCHAR(255) NOT NULL',
-            'event_type' => "ENUM('private','public','commercial','charity','government','religious','cultural','sports','entertainment','other') NOT NULL",
-            'event_category' => "ENUM('small','medium','large','major') NOT NULL",
-            'description' => 'TEXT NOT NULL',
-            'venue_name' => 'VARCHAR(255) NOT NULL',
-            'venue_address' => 'TEXT NOT NULL',
-            'venue_coordinates' => 'VARCHAR(100)',
-            'event_date' => 'DATE NOT NULL',
-            'start_time' => 'TIME NOT NULL',
-            'end_time' => 'TIME NOT NULL',
-            'expected_attendance' => 'INT NOT NULL',
-            'alcohol_served' => 'BOOLEAN DEFAULT FALSE',
-            'amplified_sound' => 'BOOLEAN DEFAULT FALSE',
-            'food_service' => 'BOOLEAN DEFAULT FALSE',
-            'parking_required' => 'INT DEFAULT 0',
-            'special_equipment' => 'JSON',
-            'emergency_contacts' => 'JSON',
-            'status' => "ENUM('draft','submitted','under_review','approved','rejected','cancelled','completed') DEFAULT 'draft'",
-            'application_date' => 'DATETIME NOT NULL',
-            'approval_date' => 'DATETIME NULL',
-            'permit_fee' => 'DECIMAL(8,2) DEFAULT 0.00',
-            'security_deposit' => 'DECIMAL(8,2) DEFAULT 0.00',
-            'insurance_required' => 'BOOLEAN DEFAULT FALSE',
-            'risk_assessment_score' => 'INT DEFAULT 0',
-            'inspector_id' => 'INT NULL',
-            'inspection_date' => 'DATE NULL',
-            'inspection_notes' => 'TEXT',
-            'public_notification_required' => 'BOOLEAN DEFAULT FALSE',
-            'notification_date' => 'DATE NULL',
-            'documents' => 'JSON',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ],
-        'event_risk_assessments' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_id' => 'INT NOT NULL',
-            'assessor_id' => 'INT NOT NULL',
-            'assessment_date' => 'DATE NOT NULL',
-            'crowd_density_risk' => "ENUM('low','medium','high') DEFAULT 'low'",
-            'traffic_impact_risk' => "ENUM('low','medium','high') DEFAULT 'low'",
-            'noise_impact_risk' => "ENUM('low','medium','high') DEFAULT 'low'",
-            'public_safety_risk' => "ENUM('low','medium','high') DEFAULT 'low'",
-            'environmental_impact_risk' => "ENUM('low','medium','high') DEFAULT 'low'",
-            'overall_risk_score' => 'INT NOT NULL',
-            'risk_mitigation_measures' => 'JSON',
-            'additional_requirements' => 'JSON',
-            'recommendations' => 'TEXT',
-            'assessment_status' => "ENUM('pending','completed','requires_revision') DEFAULT 'pending'",
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'event_inspections' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_id' => 'INT NOT NULL',
-            'inspector_id' => 'INT NOT NULL',
-            'inspection_type' => "ENUM('pre_event','during_event','post_event') NOT NULL",
-            'scheduled_date' => 'DATE NOT NULL',
-            'actual_date' => 'DATE NULL',
-            'inspection_status' => "ENUM('scheduled','completed','cancelled','rescheduled') DEFAULT 'scheduled'",
-            'venue_compliance' => "ENUM('compliant','non_compliant','partial') NULL",
-            'safety_compliance' => "ENUM('compliant','non_compliant','partial') NULL",
-            'permit_conditions_met' => "ENUM('yes','no','partial') NULL",
-            'violations_found' => 'JSON',
-            'corrective_actions_required' => 'JSON',
-            'inspection_notes' => 'TEXT',
-            'follow_up_required' => 'BOOLEAN DEFAULT FALSE',
-            'follow_up_date' => 'DATE NULL',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'event_public_notifications' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_id' => 'INT NOT NULL',
-            'notification_type' => "ENUM('public_notice','neighborhood_notice','media_release') NOT NULL",
-            'notification_date' => 'DATE NOT NULL',
-            'publication_method' => 'VARCHAR(100) NOT NULL',
-            'target_audience' => 'VARCHAR(255)',
-            'notification_content' => 'TEXT',
-            'response_deadline' => 'DATE NULL',
-            'responses_received' => 'INT DEFAULT 0',
-            'objections_received' => 'INT DEFAULT 0',
-            'support_received' => 'INT DEFAULT 0',
-            'notification_status' => "ENUM('planned','published','completed') DEFAULT 'planned'",
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'event_violations' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_id' => 'INT NOT NULL',
-            'violation_type' => 'VARCHAR(100) NOT NULL',
-            'description' => 'TEXT NOT NULL',
-            'severity' => "ENUM('minor','moderate','major','critical') NOT NULL",
-            'reported_date' => 'DATE NOT NULL',
-            'reported_by' => 'INT NOT NULL',
-            'corrective_action_required' => 'TEXT',
-            'deadline_for_correction' => 'DATE NULL',
-            'correction_date' => 'DATE NULL',
-            'fine_amount' => 'DECIMAL(8,2) DEFAULT 0.00',
-            'status' => "ENUM('open','corrected','escalated','closed') DEFAULT 'open'",
-            'follow_up_notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'event_schedules' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_id' => 'INT NOT NULL',
-            'activity_name' => 'VARCHAR(255) NOT NULL',
-            'start_time' => 'TIME NOT NULL',
-            'end_time' => 'TIME NOT NULL',
-            'location' => 'VARCHAR(255)',
-            'responsible_party' => 'VARCHAR(100)',
-            'equipment_needed' => 'JSON',
-            'notes' => 'TEXT',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ],
-        'event_emergency_plans' => [
-            'id' => 'INT PRIMARY KEY AUTO_INCREMENT',
-            'permit_id' => 'INT NOT NULL',
-            'emergency_type' => "ENUM('medical','fire','security','weather','crowd_control','other') NOT NULL",
-            'response_procedure' => 'TEXT NOT NULL',
-            'responsible_personnel' => 'VARCHAR(255)',
-            'contact_numbers' => 'JSON',
-            'equipment_resources' => 'JSON',
-            'evacuation_routes' => 'JSON',
-            'medical_facilities' => 'JSON',
-            'last_updated' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ]
-    ];
+    public function uninstall() {
+        $this->dropTables();
+        return true;
+    }
 
-    /**
-     * Module API endpoints
-     */
-    protected array $endpoints = [
-        [
-            'method' => 'GET',
-            'path' => '/api/event-permits',
-            'handler' => 'getEventPermits',
-            'auth' => true,
-            'permissions' => ['event_permits.view']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/event-permits',
-            'handler' => 'createEventPermit',
-            'auth' => true,
-            'permissions' => ['event_permits.create']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/event-permits/{id}',
-            'handler' => 'getEventPermit',
-            'auth' => true,
-            'permissions' => ['event_permits.view']
-        ],
-        [
-            'method' => 'PUT',
-            'path' => '/api/event-permits/{id}',
-            'handler' => 'updateEventPermit',
-            'auth' => true,
-            'permissions' => ['event_permits.edit']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/event-permits/{id}/approve',
-            'handler' => 'approveEventPermit',
-            'auth' => true,
-            'permissions' => ['event_permits.approve']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/event-permits/{id}/reject',
-            'handler' => 'rejectEventPermit',
-            'auth' => true,
-            'permissions' => ['event_permits.reject']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/event-risk-assessments',
-            'handler' => 'getRiskAssessments',
-            'auth' => true,
-            'permissions' => ['event_permits.view']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/event-risk-assessments',
-            'handler' => 'createRiskAssessment',
-            'auth' => true,
-            'permissions' => ['event_permits.edit']
-        ],
-        [
-            'method' => 'GET',
-            'path' => '/api/event-inspections',
-            'handler' => 'getEventInspections',
-            'auth' => true,
-            'permissions' => ['event_permits.inspect']
-        ],
-        [
-            'method' => 'POST',
-            'path' => '/api/event-inspections',
-            'handler' => 'createEventInspection',
-            'auth' => true,
-            'permissions' => ['event_permits.inspect']
-        ]
-    ];
+    private function createTables() {
+        $sql = "
+            CREATE TABLE IF NOT EXISTS event_permits (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                permit_number VARCHAR(20) UNIQUE NOT NULL,
+                applicant_id INT,
 
-    /**
-     * Module workflows
-     */
-    protected array $workflows = [
-        'event_permit_application' => [
-            'name' => 'Event Permit Application',
-            'description' => 'Workflow for processing event permit applications',
+                -- Event Information
+                event_name VARCHAR(200) NOT NULL,
+                event_description TEXT,
+                event_type ENUM('concert', 'festival', 'sports', 'parade', 'protest', 'wedding', 'corporate', 'charity', 'private', 'other') DEFAULT 'private',
+                event_category ENUM('public', 'private', 'commercial', 'non_profit', 'government') DEFAULT 'private',
+
+                -- Event Details
+                event_date DATE NOT NULL,
+                event_start_time TIME NOT NULL,
+                event_end_time TIME NOT NULL,
+                expected_attendance INT,
+                actual_attendance INT,
+
+                -- Location Information
+                venue_name VARCHAR(200) NOT NULL,
+                venue_address TEXT NOT NULL,
+                venue_city VARCHAR(100) NOT NULL,
+                venue_state_province VARCHAR(100),
+                venue_postal_code VARCHAR(20),
+                venue_coordinates VARCHAR(50), -- latitude,longitude
+
+                -- Contact Information
+                organizer_name VARCHAR(200) NOT NULL,
+                organizer_email VARCHAR(255) NOT NULL,
+                organizer_phone VARCHAR(20) NOT NULL,
+                organizer_address TEXT,
+
+                -- Permit Status
+                permit_status ENUM('draft', 'submitted', 'under_review', 'approved', 'rejected', 'cancelled', 'expired', 'completed') DEFAULT 'draft',
+                application_date DATE NOT NULL,
+                review_date DATE,
+                approval_date DATE,
+                expiry_date DATE,
+
+                -- Financial Information
+                application_fee DECIMAL(8,2) DEFAULT 0,
+                permit_fee DECIMAL(8,2) DEFAULT 0,
+                insurance_fee DECIMAL(8,2) DEFAULT 0,
+                total_amount DECIMAL(8,2) DEFAULT 0,
+                payment_status ENUM('pending', 'paid', 'refunded', 'waived') DEFAULT 'pending',
+
+                -- Risk Assessment
+                risk_level ENUM('low', 'medium', 'high', 'critical') DEFAULT 'low',
+                risk_assessment_date DATE,
+                risk_assessment_notes TEXT,
+
+                -- Insurance Information
+                insurance_required BOOLEAN DEFAULT TRUE,
+                insurance_provider VARCHAR(200),
+                insurance_policy_number VARCHAR(50),
+                insurance_coverage_amount DECIMAL(10,2),
+                insurance_expiry_date DATE,
+
+                -- Supporting Documents
+                application_documents TEXT, -- JSON array of document paths
+                insurance_documents TEXT, -- JSON array of document paths
+                risk_assessment_documents TEXT, -- JSON array of document paths
+
+                -- Review Information
+                reviewer_id INT,
+                review_notes TEXT,
+                approval_conditions TEXT,
+
+                -- Public Notification
+                public_notification_required BOOLEAN DEFAULT TRUE,
+                public_notification_date DATE,
+                public_notification_method ENUM('newspaper', 'website', 'social_media', 'radio', 'tv', 'multiple') DEFAULT 'website',
+
+                -- Emergency Contacts
+                emergency_contact_name VARCHAR(200),
+                emergency_contact_phone VARCHAR(20),
+                emergency_contact_email VARCHAR(255),
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                INDEX idx_permit_number (permit_number),
+                INDEX idx_applicant_id (applicant_id),
+                INDEX idx_event_date (event_date),
+                INDEX idx_permit_status (permit_status),
+                INDEX idx_event_type (event_type),
+                INDEX idx_risk_level (risk_level),
+                INDEX idx_venue_city (venue_city)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_permit_requirements (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                requirement_code VARCHAR(20) UNIQUE NOT NULL,
+                event_type VARCHAR(50) NOT NULL,
+
+                -- Requirement Details
+                requirement_name VARCHAR(200) NOT NULL,
+                requirement_description TEXT,
+                requirement_category ENUM('insurance', 'safety', 'health', 'environmental', 'traffic', 'noise', 'waste', 'other') DEFAULT 'other',
+
+                -- Applicability
+                minimum_attendance INT DEFAULT 0,
+                risk_level_required ENUM('low', 'medium', 'high', 'critical', 'all') DEFAULT 'all',
+                venue_type_required VARCHAR(100),
+
+                -- Requirement Rules
+                is_mandatory BOOLEAN DEFAULT TRUE,
+                is_conditional BOOLEAN DEFAULT FALSE,
+                condition_description TEXT,
+
+                -- Documentation
+                documents_required TEXT, -- JSON array of required documents
+                verification_method ENUM('document_review', 'inspection', 'third_party', 'self_certification') DEFAULT 'document_review',
+
+                -- Status
+                requirement_status ENUM('active', 'inactive', 'deprecated') DEFAULT 'active',
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                INDEX idx_requirement_code (requirement_code),
+                INDEX idx_event_type (event_type),
+                INDEX idx_requirement_category (requirement_category),
+                INDEX idx_requirement_status (requirement_status)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_permit_inspections (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                inspection_code VARCHAR(20) UNIQUE NOT NULL,
+                permit_id INT NOT NULL,
+
+                -- Inspection Details
+                inspection_type ENUM('pre_event', 'during_event', 'post_event', 'follow_up') DEFAULT 'pre_event',
+                inspection_date DATE NOT NULL,
+                inspection_time TIME,
+                inspector_name VARCHAR(100),
+
+                -- Inspection Results
+                inspection_status ENUM('scheduled', 'completed', 'cancelled', 'rescheduled') DEFAULT 'scheduled',
+                compliance_status ENUM('compliant', 'non_compliant', 'partial_compliance', 'pending_review') DEFAULT 'pending_review',
+
+                -- Findings
+                inspection_findings TEXT,
+                violations_found TEXT, -- JSON array of violations
+                corrective_actions_required TEXT, -- JSON array of required actions
+
+                -- Follow-up
+                follow_up_required BOOLEAN DEFAULT FALSE,
+                follow_up_date DATE,
+                follow_up_notes TEXT,
+
+                -- Documentation
+                inspection_report TEXT, -- Path to inspection report
+                photos_evidence TEXT, -- JSON array of photo paths
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (permit_id) REFERENCES event_permits(id) ON DELETE CASCADE,
+                INDEX idx_inspection_code (inspection_code),
+                INDEX idx_permit_id (permit_id),
+                INDEX idx_inspection_date (inspection_date),
+                INDEX idx_inspection_status (inspection_status),
+                INDEX idx_compliance_status (compliance_status)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_permit_violations (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                violation_code VARCHAR(20) UNIQUE NOT NULL,
+                permit_id INT NOT NULL,
+                inspection_id INT,
+
+                -- Violation Details
+                violation_type ENUM('safety', 'health', 'environmental', 'traffic', 'noise', 'waste', 'insurance', 'other') DEFAULT 'other',
+                violation_description TEXT NOT NULL,
+                severity_level ENUM('minor', 'moderate', 'major', 'critical') DEFAULT 'minor',
+
+                -- Violation Status
+                violation_status ENUM('identified', 'corrected', 'pending_correction', 'escalated', 'resolved') DEFAULT 'identified',
+                identified_date DATE NOT NULL,
+                correction_deadline DATE,
+                actual_correction_date DATE,
+
+                -- Corrective Actions
+                corrective_actions_required TEXT,
+                corrective_actions_taken TEXT,
+
+                -- Penalties
+                penalty_assessed BOOLEAN DEFAULT FALSE,
+                penalty_type ENUM('warning', 'fine', 'permit_suspension', 'permit_revocation', 'other') DEFAULT 'warning',
+                penalty_amount DECIMAL(8,2) DEFAULT 0,
+                penalty_description TEXT,
+
+                -- Officer Information
+                identified_by VARCHAR(100),
+                reviewed_by VARCHAR(100),
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (permit_id) REFERENCES event_permits(id) ON DELETE CASCADE,
+                FOREIGN KEY (inspection_id) REFERENCES event_permit_inspections(id) ON DELETE SET NULL,
+                INDEX idx_violation_code (violation_code),
+                INDEX idx_permit_id (permit_id),
+                INDEX idx_violation_status (violation_status),
+                INDEX idx_severity_level (severity_level),
+                INDEX idx_identified_date (identified_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_public_notifications (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                notification_code VARCHAR(20) UNIQUE NOT NULL,
+                permit_id INT NOT NULL,
+
+                -- Notification Details
+                notification_type ENUM('initial', 'update', 'cancellation', 'emergency') DEFAULT 'initial',
+                notification_date DATE NOT NULL,
+                publication_date DATE,
+
+                -- Publication Information
+                publication_method ENUM('newspaper', 'website', 'social_media', 'radio', 'tv', 'public_notice_board') NOT NULL,
+                publication_name VARCHAR(200), -- e.g., newspaper name, website URL
+                publication_reference VARCHAR(100), -- e.g., issue number, post ID
+
+                -- Notification Content
+                notification_title VARCHAR(200) NOT NULL,
+                notification_content TEXT NOT NULL,
+                notification_summary TEXT,
+
+                -- Coverage Area
+                coverage_area VARCHAR(100), -- e.g., city-wide, district-specific
+                estimated_readership INT,
+
+                -- Status and Verification
+                notification_status ENUM('draft', 'submitted', 'published', 'verified', 'expired') DEFAULT 'draft',
+                verification_date DATE,
+                verification_method ENUM('screenshot', 'publication_confirmation', 'third_party_verification') DEFAULT 'screenshot',
+
+                -- Documentation
+                proof_of_publication TEXT, -- JSON array of proof documents
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (permit_id) REFERENCES event_permits(id) ON DELETE CASCADE,
+                INDEX idx_notification_code (notification_code),
+                INDEX idx_permit_id (permit_id),
+                INDEX idx_notification_date (notification_date),
+                INDEX idx_publication_method (publication_method),
+                INDEX idx_notification_status (notification_status)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_permit_appeals (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                appeal_code VARCHAR(20) UNIQUE NOT NULL,
+                permit_id INT NOT NULL,
+
+                -- Appeal Details
+                appeal_type ENUM('permit_denial', 'violation_penalty', 'inspection_findings', 'other') DEFAULT 'permit_denial',
+                appeal_date DATE NOT NULL,
+                appeal_description TEXT NOT NULL,
+
+                -- Appeal Grounds
+                appeal_grounds TEXT,
+                supporting_evidence TEXT, -- JSON array of evidence documents
+
+                -- Appeal Status
+                appeal_status ENUM('submitted', 'under_review', 'approved', 'denied', 'withdrawn') DEFAULT 'submitted',
+                review_date DATE,
+                decision_date DATE,
+
+                -- Review Information
+                reviewer_name VARCHAR(100),
+                review_notes TEXT,
+                decision_description TEXT,
+
+                -- Appeal Outcome
+                appeal_outcome TEXT,
+                conditions_imposed TEXT,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (permit_id) REFERENCES event_permits(id) ON DELETE CASCADE,
+                INDEX idx_appeal_code (appeal_code),
+                INDEX idx_permit_id (permit_id),
+                INDEX idx_appeal_status (appeal_status),
+                INDEX idx_appeal_date (appeal_date)
+            );
+        ";
+
+        $this->db->query($sql);
+    }
+
+    private function setupWorkflows() {
+        // Setup event permit application workflow
+        $permitApplicationWorkflow = [
+            'name' => 'Event Permit Application Workflow',
+            'description' => 'Complete workflow for event permit applications and approvals',
             'steps' => [
-                'draft' => ['name' => 'Application Draft', 'next' => 'submitted'],
-                'submitted' => ['name' => 'Application Submitted', 'next' => 'initial_review'],
-                'initial_review' => ['name' => 'Initial Review', 'next' => 'risk_assessment'],
-                'risk_assessment' => ['name' => 'Risk Assessment', 'next' => 'public_notification'],
-                'public_notification' => ['name' => 'Public Notification', 'next' => 'final_review'],
-                'final_review' => ['name' => 'Final Review', 'next' => ['approved', 'rejected', 'additional_info']],
-                'additional_info' => ['name' => 'Additional Information Required', 'next' => 'final_review'],
-                'approved' => ['name' => 'Permit Approved', 'next' => 'permit_issued'],
-                'permit_issued' => ['name' => 'Permit Issued', 'next' => 'event_completed'],
-                'event_completed' => ['name' => 'Event Completed', 'next' => null],
-                'rejected' => ['name' => 'Application Rejected', 'next' => null]
-            ]
-        ],
-        'event_inspection_process' => [
-            'name' => 'Event Inspection Process',
-            'description' => 'Workflow for event inspections and compliance',
-            'steps' => [
-                'inspection_scheduled' => ['name' => 'Inspection Scheduled', 'next' => 'inspection_completed'],
-                'inspection_completed' => ['name' => 'Inspection Completed', 'next' => ['compliant', 'violations_found']],
-                'compliant' => ['name' => 'Compliant', 'next' => null],
-                'violations_found' => ['name' => 'Violations Found', 'next' => 'corrective_actions'],
-                'corrective_actions' => ['name' => 'Corrective Actions', 'next' => 'follow_up_inspection'],
-                'follow_up_inspection' => ['name' => 'Follow-up Inspection', 'next' => ['compliant', 'escalated']],
-                'escalated' => ['name' => 'Escalated', 'next' => null]
-            ]
-        ]
-    ];
-
-    /**
-     * Module forms
-     */
-    protected array $forms = [
-        'event_permit_application' => [
-            'name' => 'Event Permit Application',
-            'fields' => [
-                'event_name' => ['type' => 'text', 'required' => true, 'label' => 'Event Name'],
-                'event_type' => ['type' => 'select', 'required' => true, 'label' => 'Event Type'],
-                'event_category' => ['type' => 'select', 'required' => true, 'label' => 'Event Category'],
-                'description' => ['type' => 'textarea', 'required' => true, 'label' => 'Event Description'],
-                'venue_name' => ['type' => 'text', 'required' => true, 'label' => 'Venue Name'],
-                'venue_address' => ['type' => 'textarea', 'required' => true, 'label' => 'Venue Address'],
-                'event_date' => ['type' => 'date', 'required' => true, 'label' => 'Event Date'],
-                'start_time' => ['type' => 'time', 'required' => true, 'label' => 'Start Time'],
-                'end_time' => ['type' => 'time', 'required' => true, 'label' => 'End Time'],
-                'expected_attendance' => ['type' => 'number', 'required' => true, 'label' => 'Expected Attendance'],
-                'alcohol_served' => ['type' => 'checkbox', 'required' => false, 'label' => 'Alcohol Will Be Served'],
-                'amplified_sound' => ['type' => 'checkbox', 'required' => false, 'label' => 'Amplified Sound Equipment'],
-                'food_service' => ['type' => 'checkbox', 'required' => false, 'label' => 'Food Service'],
-                'parking_required' => ['type' => 'number', 'required' => false, 'label' => 'Parking Spaces Required'],
-                'organizer_name' => ['type' => 'text', 'required' => true, 'label' => 'Organizer Name'],
-                'organizer_email' => ['type' => 'email', 'required' => true, 'label' => 'Organizer Email'],
-                'organizer_phone' => ['type' => 'tel', 'required' => true, 'label' => 'Organizer Phone'],
-                'emergency_contact_name' => ['type' => 'text', 'required' => true, 'label' => 'Emergency Contact Name'],
-                'emergency_contact_phone' => ['type' => 'tel', 'required' => true, 'label' => 'Emergency Contact Phone']
-            ],
-            'documents' => [
-                'event_plan' => ['required' => true, 'label' => 'Event Plan Document'],
-                'insurance_certificate' => ['required' => false, 'label' => 'Insurance Certificate'],
-                'site_plan' => ['required' => false, 'label' => 'Site Plan'],
-                'traffic_plan' => ['required' => false, 'label' => 'Traffic Management Plan'],
-                'safety_plan' => ['required' => true, 'label' => 'Safety and Emergency Plan'],
-                'noise_permit' => ['required' => false, 'label' => 'Noise Permit'],
-                'liquor_license' => ['required' => false, 'label' => 'Liquor License']
-            ]
-        ],
-        'risk_assessment_form' => [
-            'name' => 'Event Risk Assessment',
-            'fields' => [
-                'crowd_density_risk' => ['type' => 'select', 'required' => true, 'label' => 'Crowd Density Risk'],
-                'traffic_impact_risk' => ['type' => 'select', 'required' => true, 'label' => 'Traffic Impact Risk'],
-                'noise_impact_risk' => ['type' => 'select', 'required' => true, 'label' => 'Noise Impact Risk'],
-                'public_safety_risk' => ['type' => 'select', 'required' => true, 'label' => 'Public Safety Risk'],
-                'environmental_impact_risk' => ['type' => 'select', 'required' => true, 'label' => 'Environmental Impact Risk'],
-                'risk_mitigation_measures' => ['type' => 'textarea', 'required' => true, 'label' => 'Risk Mitigation Measures'],
-                'additional_requirements' => ['type' => 'textarea', 'required' => false, 'label' => 'Additional Requirements'],
-                'recommendations' => ['type' => 'textarea', 'required' => false, 'label' => 'Recommendations']
-            ]
-        ],
-        'inspection_report' => [
-            'name' => 'Event Inspection Report',
-            'fields' => [
-                'inspection_type' => ['type' => 'select', 'required' => true, 'label' => 'Inspection Type'],
-                'venue_compliance' => ['type' => 'select', 'required' => true, 'label' => 'Venue Compliance'],
-                'safety_compliance' => ['type' => 'select', 'required' => true, 'label' => 'Safety Compliance'],
-                'permit_conditions_met' => ['type' => 'select', 'required' => true, 'label' => 'Permit Conditions Met'],
-                'violations_found' => ['type' => 'textarea', 'required' => false, 'label' => 'Violations Found'],
-                'corrective_actions_required' => ['type' => 'textarea', 'required' => false, 'label' => 'Corrective Actions Required'],
-                'inspection_notes' => ['type' => 'textarea', 'required' => false, 'label' => 'Inspection Notes'],
-                'follow_up_required' => ['type' => 'checkbox', 'required' => false, 'label' => 'Follow-up Inspection Required']
-            ]
-        ]
-    ];
-
-    /**
-     * Module reports
-     */
-    protected array $reports = [
-        'event_permit_summary' => [
-            'name' => 'Event Permit Summary Report',
-            'description' => 'Summary of event permits by type, status, and time period',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'event_type' => ['type' => 'select', 'required' => false],
-                'event_category' => ['type' => 'select', 'required' => false],
-                'status' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'permit_number', 'event_name', 'event_type', 'event_date',
-                'expected_attendance', 'status', 'permit_fee'
-            ]
-        ],
-        'event_risk_assessment' => [
-            'name' => 'Event Risk Assessment Report',
-            'description' => 'Risk assessment results and mitigation measures',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'risk_level' => ['type' => 'select', 'required' => false],
-                'event_category' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'event_name', 'overall_risk_score', 'crowd_density_risk',
-                'traffic_impact_risk', 'public_safety_risk', 'recommendations'
-            ]
-        ],
-        'event_inspection_compliance' => [
-            'name' => 'Event Inspection Compliance Report',
-            'description' => 'Inspection results and compliance status',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'inspection_type' => ['type' => 'select', 'required' => false],
-                'compliance_status' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'event_name', 'inspection_type', 'venue_compliance',
-                'safety_compliance', 'violations_found', 'inspection_date'
-            ]
-        ],
-        'event_revenue_report' => [
-            'name' => 'Event Permit Revenue Report',
-            'description' => 'Revenue generated from event permits and fees',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => true],
-                'event_type' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'event_type', 'total_permits', 'total_revenue',
-                'average_fee', 'permit_fee', 'security_deposit'
-            ]
-        ],
-        'public_notification_report' => [
-            'name' => 'Public Notification Report',
-            'description' => 'Public notification activities and responses',
-            'parameters' => [
-                'date_range' => ['type' => 'date_range', 'required' => false],
-                'notification_type' => ['type' => 'select', 'required' => false]
-            ],
-            'columns' => [
-                'event_name', 'notification_type', 'notification_date',
-                'responses_received', 'objections_received', 'publication_method'
-            ]
-        ]
-    ];
-
-    /**
-     * Module notifications
-     */
-    protected array $notifications = [
-        'permit_application_submitted' => [
-            'name' => 'Permit Application Submitted',
-            'template' => 'Your event permit application for {event_name} has been submitted successfully. Permit Number: {permit_number}',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['application_created']
-        ],
-        'permit_approved' => [
-            'name' => 'Event Permit Approved',
-            'template' => 'Congratulations! Your event permit for {event_name} has been approved. Event Date: {event_date}',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['permit_approved']
-        ],
-        'permit_rejected' => [
-            'name' => 'Event Permit Rejected',
-            'template' => 'Your event permit application for {event_name} has been rejected. Please review the feedback.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['permit_rejected']
-        ],
-        'inspection_scheduled' => [
-            'name' => 'Event Inspection Scheduled',
-            'template' => 'An inspection has been scheduled for your event {event_name} on {inspection_date}.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['inspection_scheduled']
-        ],
-        'inspection_completed' => [
-            'name' => 'Inspection Completed',
-            'template' => 'Inspection completed for {event_name}. Status: {inspection_status}. {inspection_notes}',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['inspection_completed']
-        ],
-        'public_notification' => [
-            'name' => 'Public Notification',
-            'template' => 'Public notification for event {event_name} on {event_date} has been published.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['notification_published']
-        ],
-        'violation_notice' => [
-            'name' => 'Event Violation Notice',
-            'template' => 'A violation has been noted for your event {event_name}. Type: {violation_type}. Please correct by {deadline}.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['violation_detected']
-        ],
-        'event_reminder' => [
-            'name' => 'Event Reminder',
-            'template' => 'Your event {event_name} is scheduled for {event_date}. Please ensure all requirements are met.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['event_reminder']
-        ],
-        'permit_expiring' => [
-            'name' => 'Permit Expiring Soon',
-            'template' => 'Your event permit for {event_name} expires on {event_date}. Please ensure event completion requirements are met.',
-            'channels' => ['email', 'sms', 'in_app'],
-            'triggers' => ['permit_expiring']
-        ]
-    ];
-
-    /**
-     * Event categories and risk levels
-     */
-    private array $eventCategories = [];
-
-    /**
-     * Risk assessment criteria
-     */
-    private array $riskCriteria = [];
-
-    /**
-     * Fee structures
-     */
-    private array $feeStructures = [];
-
-    /**
-     * Constructor
-     */
-    public function __construct(array $config = [])
-    {
-        parent::__construct($config);
-    }
-
-    /**
-     * Get module metadata
-     */
-    public function getMetadata(): array
-    {
-        return $this->metadata;
-    }
-
-    /**
-     * Get default configuration
-     */
-    protected function getDefaultConfig(): array
-    {
-        return [
-            'enabled' => true,
-            'application_processing_days' => 14,
-            'public_notification_period' => 10, // days before event
-            'inspection_lead_time' => 3, // days before event
-            'max_event_duration' => 12, // hours
-            'max_attendance_small' => 100,
-            'max_attendance_medium' => 500,
-            'max_attendance_large' => 2000,
-            'max_attendance_major' => 10000,
-            'auto_approval_threshold' => 50, // attendance for auto-approval
-            'notification_settings' => [
-                'email_enabled' => true,
-                'sms_enabled' => true,
-                'in_app_enabled' => true
+                [
+                    'name' => 'Application Submission',
+                    'type' => 'user_task',
+                    'assignee' => 'applicant',
+                    'form' => 'permit_application_form'
+                ],
+                [
+                    'name' => 'Initial Review',
+                    'type' => 'user_task',
+                    'assignee' => 'permit_officer',
+                    'form' => 'initial_review_form'
+                ],
+                [
+                    'name' => 'Risk Assessment',
+                    'type' => 'user_task',
+                    'assignee' => 'risk_assessor',
+                    'form' => 'risk_assessment_form'
+                ],
+                [
+                    'name' => 'Insurance Verification',
+                    'type' => 'service_task',
+                    'service' => 'insurance_verification_service'
+                ],
+                [
+                    'name' => 'Public Notification',
+                    'type' => 'user_task',
+                    'assignee' => 'notification_officer',
+                    'form' => 'public_notification_form'
+                ],
+                [
+                    'name' => 'Final Approval',
+                    'type' => 'user_task',
+                    'assignee' => 'permitting_manager',
+                    'form' => 'final_approval_form'
+                ],
+                [
+                    'name' => 'Permit Issuance',
+                    'type' => 'service_task',
+                    'service' => 'permit_issuance_service'
+                ],
+                [
+                    'name' => 'Applicant Notification',
+                    'type' => 'user_task',
+                    'assignee' => 'applicant',
+                    'form' => 'permit_notification_form'
+                ]
             ]
         ];
+
+        // Save workflow configurations
+        file_put_contents(__DIR__ . '/config/event_workflow.json', json_encode($permitApplicationWorkflow, JSON_PRETTY_PRINT));
     }
 
-    /**
-     * Initialize module
-     */
-    protected function initializeModule(): void
-    {
-        $this->initializeEventCategories();
-        $this->initializeRiskCriteria();
-        $this->initializeFeeStructures();
-    }
-
-    /**
-     * Initialize event categories
-     */
-    private function initializeEventCategories(): void
-    {
-        $this->eventCategories = [
-            'small' => [
-                'name' => 'Small Event',
-                'max_attendance' => 100,
-                'requires_public_notice' => false,
-                'requires_inspection' => false,
-                'base_fee' => 50.00
-            ],
-            'medium' => [
-                'name' => 'Medium Event',
-                'max_attendance' => 500,
-                'requires_public_notice' => true,
-                'requires_inspection' => true,
-                'base_fee' => 150.00
-            ],
-            'large' => [
-                'name' => 'Large Event',
-                'max_attendance' => 2000,
-                'requires_public_notice' => true,
-                'requires_inspection' => true,
-                'base_fee' => 500.00
-            ],
-            'major' => [
-                'name' => 'Major Event',
-                'max_attendance' => 10000,
-                'requires_public_notice' => true,
-                'requires_inspection' => true,
-                'base_fee' => 2000.00
-            ]
+    private function createDirectories() {
+        $directories = [
+            __DIR__ . '/uploads/applications',
+            __DIR__ . '/uploads/insurance',
+            __DIR__ . '/uploads/inspections',
+            __DIR__ . '/uploads/notifications',
+            __DIR__ . '/uploads/appeals',
+            __DIR__ . '/templates',
+            __DIR__ . '/config'
         ];
-    }
 
-    /**
-     * Initialize risk criteria
-     */
-    private function initializeRiskCriteria(): void
-    {
-        $this->riskCriteria = [
-            'crowd_density' => [
-                'low' => ['threshold' => 50, 'score' => 1],
-                'medium' => ['threshold' => 200, 'score' => 3],
-                'high' => ['threshold' => 1000, 'score' => 5]
-            ],
-            'traffic_impact' => [
-                'low' => ['threshold' => 100, 'score' => 1],
-                'medium' => ['threshold' => 500, 'score' => 3],
-                'high' => ['threshold' => 2000, 'score' => 5]
-            ],
-            'noise_impact' => [
-                'low' => ['threshold' => 100, 'score' => 1],
-                'medium' => ['threshold' => 500, 'score' => 3],
-                'high' => ['threshold' => 2000, 'score' => 5]
-            ],
-            'public_safety' => [
-                'low' => ['threshold' => 50, 'score' => 1],
-                'medium' => ['threshold' => 200, 'score' => 3],
-                'high' => ['threshold' => 1000, 'score' => 5]
-            ],
-            'environmental_impact' => [
-                'low' => ['threshold' => 100, 'score' => 1],
-                'medium' => ['threshold' => 500, 'score' => 3],
-                'high' => ['threshold' => 2000, 'score' => 5]
-            ]
-        ];
-    }
-
-    /**
-     * Initialize fee structures
-     */
-    private function initializeFeeStructures(): void
-    {
-        $this->feeStructures = [
-            'base_fees' => [
-                'small' => 50.00,
-                'medium' => 150.00,
-                'large' => 500.00,
-                'major' => 2000.00
-            ],
-            'additional_fees' => [
-                'alcohol_service' => 200.00,
-                'amplified_sound' => 100.00,
-                'food_service' => 150.00,
-                'special_equipment' => 300.00,
-                'security_deposit' => 500.00
-            ],
-            'hourly_rates' => [
-                'inspection' => 75.00,
-                'security' => 50.00,
-                'cleanup' => 100.00
-            ]
-        ];
-    }
-
-    /**
-     * Create event permit application
-     */
-    public function createEventPermitApplication(array $applicationData): array
-    {
-        // Validate application data
-        $validation = $this->validatePermitApplication($applicationData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
+        foreach ($directories as $dir) {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
         }
-
-        // Generate permit number
-        $permitNumber = $this->generatePermitNumber();
-
-        // Determine event category based on attendance
-        $eventCategory = $this->determineEventCategory($applicationData['expected_attendance']);
-
-        // Calculate fees
-        $fees = $this->calculatePermitFees($applicationData, $eventCategory);
-
-        // Create application record
-        $application = [
-            'permit_number' => $permitNumber,
-            'applicant_id' => $applicationData['applicant_id'],
-            'event_name' => $applicationData['event_name'],
-            'event_type' => $applicationData['event_type'],
-            'event_category' => $eventCategory,
-            'description' => $applicationData['description'],
-            'venue_name' => $applicationData['venue_name'],
-            'venue_address' => $applicationData['venue_address'],
-            'event_date' => $applicationData['event_date'],
-            'start_time' => $applicationData['start_time'],
-            'end_time' => $applicationData['end_time'],
-            'expected_attendance' => $applicationData['expected_attendance'],
-            'alcohol_served' => $applicationData['alcohol_served'] ?? false,
-            'amplified_sound' => $applicationData['amplified_sound'] ?? false,
-            'food_service' => $applicationData['food_service'] ?? false,
-            'parking_required' => $applicationData['parking_required'] ?? 0,
-            'special_equipment' => $applicationData['special_equipment'] ?? [],
-            'emergency_contacts' => $applicationData['emergency_contacts'] ?? [],
-            'status' => 'draft',
-            'application_date' => date('Y-m-d H:i:s'),
-            'permit_fee' => $fees['permit_fee'],
-            'security_deposit' => $fees['security_deposit'],
-            'insurance_required' => $this->requiresInsurance($applicationData),
-            'public_notification_required' => $this->eventCategories[$eventCategory]['requires_public_notice'],
-            'documents' => $applicationData['documents'] ?? [],
-            'notes' => $applicationData['notes'] ?? ''
-        ];
-
-        // Save to database
-        $this->savePermitApplication($application);
-
-        // Start workflow
-        $this->startPermitWorkflow($permitNumber);
-
-        // Send notification
-        $this->sendNotification('permit_application_submitted', $applicationData['applicant_id'], [
-            'permit_number' => $permitNumber,
-            'event_name' => $applicationData['event_name']
-        ]);
-
-        return [
-            'success' => true,
-            'permit_number' => $permitNumber,
-            'event_category' => $eventCategory,
-            'permit_fee' => $fees['permit_fee'],
-            'security_deposit' => $fees['security_deposit'],
-            'processing_time' => $this->config['application_processing_days'] . ' days'
-        ];
     }
 
-    /**
-     * Submit permit application
-     */
-    public function submitPermitApplication(string $permitNumber): array
-    {
-        $permit = $this->getEventPermit($permitNumber);
-        if (!$permit) {
-            return [
-                'success' => false,
-                'error' => 'Permit not found'
-            ];
-        }
-
-        if ($permit['status'] !== 'draft') {
-            return [
-                'success' => false,
-                'error' => 'Permit already submitted'
-            ];
-        }
-
-        // Validate all requirements are met
-        $validation = $this->validatePermitRequirements($permit);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
-        }
-
-        // Update status
-        $this->updatePermitStatus($permitNumber, 'submitted');
-
-        // Advance workflow
-        $this->advanceWorkflow($permitNumber, 'submitted');
-
-        return [
-            'success' => true,
-            'message' => 'Permit application submitted successfully'
+    private function dropTables() {
+        $tables = [
+            'event_permit_appeals',
+            'event_public_notifications',
+            'event_permit_violations',
+            'event_permit_inspections',
+            'event_permit_requirements',
+            'event_permits'
         ];
+
+        foreach ($tables as $table) {
+            $this->db->query("DROP TABLE IF EXISTS $table");
+        }
     }
 
+    // API Methods
     /**
-     * Approve event permit
+     * Create a new event permit application
+     *
+     * @param array $data Application data
+     * @return array Result with success status and permit information
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
-    public function approveEventPermit(string $permitNumber, array $approvalData = []): array
-    {
-        $permit = $this->getEventPermit($permitNumber);
-        if (!$permit) {
-            return [
-                'success' => false,
-                'error' => 'Permit not found'
-            ];
-        }
+    public function createPermitApplication(array $data): array {
+        $this->db->beginTransaction();
 
-        // Update permit status
-        $this->updatePermitStatus($permitNumber, 'approved', [
-            'approval_date' => date('Y-m-d H:i:s')
-        ]);
-
-        // Schedule inspection if required
-        if ($this->eventCategories[$permit['event_category']]['requires_inspection']) {
-            $this->schedulePermitInspection($permitNumber);
-        }
-
-        // Schedule public notification if required
-        if ($permit['public_notification_required']) {
-            $this->schedulePublicNotification($permitNumber);
-        }
-
-        // Advance workflow
-        $this->advanceWorkflow($permitNumber, 'approved');
-
-        // Send notification
-        $this->sendNotification('permit_approved', $permit['applicant_id'], [
-            'permit_number' => $permitNumber,
-            'event_name' => $permit['event_name'],
-            'event_date' => $permit['event_date']
-        ]);
-
-        return [
-            'success' => true,
-            'permit_number' => $permitNumber,
-            'message' => 'Event permit approved successfully'
-        ];
-    }
-
-    /**
-     * Create risk assessment
-     */
-    public function createRiskAssessment(array $assessmentData): array
-    {
-        // Validate assessment data
-        $validation = $this->validateRiskAssessment($assessmentData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
-        }
-
-        // Calculate overall risk score
-        $overallScore = $this->calculateRiskScore($assessmentData);
-
-        // Create assessment record
-        $assessment = [
-            'permit_id' => $assessmentData['permit_id'],
-            'assessor_id' => $assessmentData['assessor_id'],
-            'assessment_date' => date('Y-m-d'),
-            'crowd_density_risk' => $assessmentData['crowd_density_risk'],
-            'traffic_impact_risk' => $assessmentData['traffic_impact_risk'],
-            'noise_impact_risk' => $assessmentData['noise_impact_risk'],
-            'public_safety_risk' => $assessmentData['public_safety_risk'],
-            'environmental_impact_risk' => $assessmentData['environmental_impact_risk'],
-            'overall_risk_score' => $overallScore,
-            'risk_mitigation_measures' => $assessmentData['risk_mitigation_measures'] ?? [],
-            'additional_requirements' => $assessmentData['additional_requirements'] ?? [],
-            'recommendations' => $assessmentData['recommendations'] ?? '',
-            'assessment_status' => 'completed'
-        ];
-
-        // Save to database
-        $this->saveRiskAssessment($assessment);
-
-        // Update permit with risk score
-        $this->updatePermitRiskScore($assessmentData['permit_id'], $overallScore);
-
-        return [
-            'success' => true,
-            'assessment_id' => $this->getLastInsertId(),
-            'overall_risk_score' => $overallScore,
-            'message' => 'Risk assessment completed successfully'
-        ];
-    }
-
-    /**
-     * Create event inspection
-     */
-    public function createEventInspection(array $inspectionData): array
-    {
-        // Validate inspection data
-        $validation = $this->validateInspectionData($inspectionData);
-        if (!$validation['valid']) {
-            return [
-                'success' => false,
-                'errors' => $validation['errors']
-            ];
-        }
-
-        // Create inspection record
-        $inspection = [
-            'permit_id' => $inspectionData['permit_id'],
-            'inspector_id' => $inspectionData['inspector_id'],
-            'inspection_type' => $inspectionData['inspection_type'],
-            'scheduled_date' => $inspectionData['scheduled_date'],
-            'inspection_status' => 'scheduled'
-        ];
-
-        // Save to database
-        $this->saveEventInspection($inspection);
-
-        // Send notification
-        $permit = $this->getEventPermitById($inspectionData['permit_id']);
-        $this->sendNotification('inspection_scheduled', $permit['applicant_id'], [
-            'event_name' => $permit['event_name'],
-            'inspection_date' => $inspectionData['scheduled_date']
-        ]);
-
-        return [
-            'success' => true,
-            'inspection_id' => $this->getLastInsertId(),
-            'message' => 'Event inspection scheduled successfully'
-        ];
-    }
-
-    /**
-     * Complete event inspection
-     */
-    public function completeEventInspection(int $inspectionId, array $inspectionResults): array
-    {
-        $inspection = $this->getEventInspection($inspectionId);
-        if (!$inspection) {
-            return [
-                'success' => false,
-                'error' => 'Inspection not found'
-            ];
-        }
-
-        // Update inspection with results
-        $this->updateEventInspection($inspectionId, [
-            'actual_date' => date('Y-m-d'),
-            'inspection_status' => 'completed',
-            'venue_compliance' => $inspectionResults['venue_compliance'],
-            'safety_compliance' => $inspectionResults['safety_compliance'],
-            'permit_conditions_met' => $inspectionResults['permit_conditions_met'],
-            'violations_found' => $inspectionResults['violations_found'] ?? [],
-            'corrective_actions_required' => $inspectionResults['corrective_actions_required'] ?? [],
-            'inspection_notes' => $inspectionResults['inspection_notes'] ?? '',
-            'follow_up_required' => $inspectionResults['follow_up_required'] ?? false
-        ]);
-
-        // Create violations if any found
-        if (!empty($inspectionResults['violations_found'])) {
-            $this->createInspectionViolations($inspection['permit_id'], $inspectionResults['violations_found']);
-        }
-
-        // Send notification
-        $permit = $this->getEventPermitById($inspection['permit_id']);
-        $this->sendNotification('inspection_completed', $permit['applicant_id'], [
-            'event_name' => $permit['event_name'],
-            'inspection_status' => 'completed',
-            'inspection_notes' => $inspectionResults['inspection_notes'] ?? ''
-        ]);
-
-        return [
-            'success' => true,
-            'message' => 'Event inspection completed successfully'
-        ];
-    }
-
-    /**
-     * Get event permits (API handler)
-     */
-    public function getEventPermits(array $filters = []): array
-    {
         try {
-            $db = Database::getInstance();
+            // Validate and sanitize input data
+            $sanitizedData = $this->sanitizePermitApplicationData($data);
+            $this->validatePermitApplicationData($sanitizedData);
 
+            // Generate unique permit number
+            $permitNumber = $this->generateUniquePermitNumber();
+
+            // Calculate fees and risk level
+            $fees = $this->calculateApplicationFees($sanitizedData);
+            $riskLevel = $this->calculateEventRisk($sanitizedData);
+
+            // Prepare permit data
+            $permitData = $this->preparePermitData($sanitizedData, $permitNumber, $fees, $riskLevel);
+
+            // Insert permit record
+            $permitId = $this->insertPermitRecord($permitData);
+
+            // Log the creation
+            $this->logPermitCreation($permitId, $sanitizedData);
+
+            $this->db->commit();
+
+            return [
+                'success' => true,
+                'permit_id' => $permitId,
+                'permit_number' => $permitNumber,
+                'risk_level' => $riskLevel,
+                'total_fees' => $fees['total']
+            ];
+
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->logError('Permit creation failed', ['error' => $e->getMessage(), 'data' => $data]);
+            throw new RuntimeException('Failed to create permit application: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Sanitize permit application data
+     */
+    private function sanitizePermitApplicationData(array $data): array {
+        $sanitized = [];
+
+        // Sanitize text fields
+        $textFields = [
+            'event_name', 'event_description', 'venue_name', 'venue_address',
+            'venue_city', 'venue_state_province', 'venue_postal_code',
+            'organizer_name', 'organizer_address', 'emergency_contact_name'
+        ];
+
+        foreach ($textFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = $this->sanitizeString($data[$field]);
+            }
+        }
+
+        // Sanitize email fields
+        $emailFields = ['organizer_email', 'emergency_contact_email'];
+        foreach ($emailFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = filter_var($data[$field], FILTER_SANITIZE_EMAIL);
+            }
+        }
+
+        // Sanitize phone fields
+        $phoneFields = ['organizer_phone', 'emergency_contact_phone'];
+        foreach ($phoneFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = $this->sanitizePhoneNumber($data[$field]);
+            }
+        }
+
+        // Copy numeric and date fields as-is (will be validated separately)
+        $numericFields = ['applicant_id', 'expected_attendance', 'created_by'];
+        foreach ($numericFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = (int) $data[$field];
+            }
+        }
+
+        $dateFields = ['event_date', 'application_date'];
+        foreach ($dateFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = $data[$field]; // Will be validated as date
+            }
+        }
+
+        $timeFields = ['event_start_time', 'event_end_time'];
+        foreach ($timeFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = $data[$field]; // Will be validated as time
+            }
+        }
+
+        // Copy enum fields
+        $enumFields = ['event_type', 'event_category'];
+        foreach ($enumFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = $data[$field];
+            }
+        }
+
+        // Handle arrays and complex data
+        if (isset($data['application_documents']) && is_array($data['application_documents'])) {
+            $sanitized['application_documents'] = $data['application_documents'];
+        }
+
+        if (isset($data['venue_coordinates'])) {
+            $sanitized['venue_coordinates'] = $data['venue_coordinates'];
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * Sanitize string input
+     */
+    private function sanitizeString(string $input): string {
+        return trim(strip_tags($input));
+    }
+
+    /**
+     * Sanitize phone number
+     */
+    private function sanitizePhoneNumber(string $phone): string {
+        return preg_replace('/[^\d\s\-\+\(\)\.]/', '', $phone);
+    }
+
+    /**
+     * Generate unique permit number
+     */
+    private function generateUniquePermitNumber(): string {
+        do {
+            $permitNumber = $this->generatePermitNumber();
+            $exists = $this->db->query(
+                "SELECT id FROM event_permits WHERE permit_number = ?",
+                [$permitNumber]
+            )->fetch(PDO::FETCH_ASSOC);
+        } while ($exists);
+
+        return $permitNumber;
+    }
+
+    /**
+     * Calculate application fees
+     */
+    private function calculateApplicationFees(array $data): array {
+        $baseFees = $this->config['default_fees'];
+        $eventType = $data['event_type'] ?? 'private';
+        $attendance = $data['expected_attendance'] ?? 0;
+
+        // Adjust fees based on event type and attendance
+        $multiplier = 1.0;
+        if ($attendance > 500) {
+            $multiplier = 1.5;
+        } elseif ($attendance > 1000) {
+            $multiplier = 2.0;
+        }
+
+        if (in_array($eventType, ['concert', 'festival', 'sports'])) {
+            $multiplier *= 1.2;
+        }
+
+        return [
+            'application_fee' => $baseFees['application_fee'] * $multiplier,
+            'permit_fee' => $baseFees['permit_fee'] * $multiplier,
+            'insurance_fee' => $baseFees['insurance_fee'] * $multiplier,
+            'total' => ($baseFees['application_fee'] + $baseFees['permit_fee'] + $baseFees['insurance_fee']) * $multiplier
+        ];
+    }
+
+    /**
+     * Prepare permit data for insertion
+     */
+    private function preparePermitData(array $data, string $permitNumber, array $fees, string $riskLevel): array {
+        return [
+            'permit_number' => $permitNumber,
+            'applicant_id' => $data['applicant_id'] ?? null,
+            'event_name' => $data['event_name'],
+            'event_description' => $data['event_description'] ?? null,
+            'event_type' => $data['event_type'] ?? 'private',
+            'event_category' => $data['event_category'] ?? 'private',
+            'event_date' => $data['event_date'],
+            'event_start_time' => $data['event_start_time'],
+            'event_end_time' => $data['event_end_time'],
+            'expected_attendance' => $data['expected_attendance'] ?? null,
+            'venue_name' => $data['venue_name'],
+            'venue_address' => $data['venue_address'],
+            'venue_city' => $data['venue_city'],
+            'venue_state_province' => $data['venue_state_province'] ?? null,
+            'venue_postal_code' => $data['venue_postal_code'] ?? null,
+            'venue_coordinates' => $data['venue_coordinates'] ?? null,
+            'organizer_name' => $data['organizer_name'],
+            'organizer_email' => $data['organizer_email'],
+            'organizer_phone' => $data['organizer_phone'],
+            'organizer_address' => $data['organizer_address'] ?? null,
+            'application_date' => $data['application_date'],
+            'application_fee' => $fees['application_fee'],
+            'permit_fee' => $fees['permit_fee'],
+            'insurance_fee' => $fees['insurance_fee'],
+            'total_amount' => $fees['total'],
+            'insurance_required' => $this->checkInsuranceRequirements($riskLevel),
+            'risk_level' => $riskLevel,
+            'emergency_contact_name' => $data['emergency_contact_name'] ?? null,
+            'emergency_contact_phone' => $data['emergency_contact_phone'] ?? null,
+            'emergency_contact_email' => $data['emergency_contact_email'] ?? null,
+            'application_documents' => json_encode($data['application_documents'] ?? []),
+            'created_by' => $data['created_by']
+        ];
+    }
+
+    /**
+     * Insert permit record into database
+     */
+    private function insertPermitRecord(array $data): int {
+        $sql = "INSERT INTO event_permits (
+            permit_number, applicant_id, event_name, event_description,
+            event_type, event_category, event_date, event_start_time,
+            event_end_time, expected_attendance, venue_name, venue_address,
+            venue_city, venue_state_province, venue_postal_code, venue_coordinates,
+            organizer_name, organizer_email, organizer_phone, organizer_address,
+            application_date, application_fee, permit_fee, insurance_fee,
+            total_amount, insurance_required, risk_level, emergency_contact_name,
+            emergency_contact_phone, emergency_contact_email, application_documents,
+            created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        $params = [
+            $data['permit_number'], $data['applicant_id'], $data['event_name'],
+            $data['event_description'], $data['event_type'], $data['event_category'],
+            $data['event_date'], $data['event_start_time'], $data['event_end_time'],
+            $data['expected_attendance'], $data['venue_name'], $data['venue_address'],
+            $data['venue_city'], $data['venue_state_province'], $data['venue_postal_code'],
+            $data['venue_coordinates'], $data['organizer_name'], $data['organizer_email'],
+            $data['organizer_phone'], $data['organizer_address'], $data['application_date'],
+            $data['application_fee'], $data['permit_fee'], $data['insurance_fee'],
+            $data['total_amount'], $data['insurance_required'], $data['risk_level'],
+            $data['emergency_contact_name'], $data['emergency_contact_phone'],
+            $data['emergency_contact_email'], $data['application_documents'],
+            $data['created_by']
+        ];
+
+        return $this->db->insert($sql, $params);
+    }
+
+    /**
+     * Log permit creation
+     */
+    private function logPermitCreation(int $permitId, array $data): void {
+        // Implementation would integrate with AuditLogger
+        // This is a placeholder for audit logging
+        error_log("Permit created: ID {$permitId}, Event: {$data['event_name']}");
+    }
+
+    /**
+     * Log errors
+     */
+    private function logError(string $message, array $context = []): void {
+        error_log($message . ': ' . json_encode($context));
+    }
+
+    public function updatePermitStatus($permitId, $status, $data = []) {
+        try {
+            $updateFields = ['permit_status = ?'];
+            $params = [$status];
+
+            if ($status === 'approved' && isset($data['approval_date'])) {
+                $updateFields[] = 'approval_date = ?';
+                $params[] = $data['approval_date'];
+
+                if (isset($data['expiry_date'])) {
+                    $updateFields[] = 'expiry_date = ?';
+                    $params[] = $data['expiry_date'];
+                }
+            }
+
+            if ($status === 'completed' && isset($data['actual_attendance'])) {
+                $updateFields[] = 'actual_attendance = ?';
+                $params[] = $data['actual_attendance'];
+            }
+
+            if (isset($data['reviewer_id'])) {
+                $updateFields[] = 'reviewer_id = ?';
+                $params[] = $data['reviewer_id'];
+            }
+
+            if (isset($data['review_date'])) {
+                $updateFields[] = 'review_date = ?';
+                $params[] = $data['review_date'];
+            }
+
+            if (isset($data['review_notes'])) {
+                $updateFields[] = 'review_notes = ?';
+                $params[] = $data['review_notes'];
+            }
+
+            $updateFields[] = 'updated_at = CURRENT_TIMESTAMP';
+
+            $sql = "UPDATE event_permits SET " . implode(', ', $updateFields) . " WHERE id = ?";
+            $params[] = $permitId;
+
+            $this->db->query($sql, $params);
+
+            return [
+                'success' => true,
+                'message' => 'Permit status updated successfully'
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function assessEventRisk($permitId, $data) {
+        try {
+            $this->validateRiskAssessmentData($data);
+
+            $sql = "UPDATE event_permits SET
+                    risk_level = ?,
+                    risk_assessment_date = ?,
+                    risk_assessment_notes = ?,
+                    approval_conditions = ?,
+                    reviewer_id = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?";
+
+            $this->db->query($sql, [
+                $data['risk_level'], $data['assessment_date'],
+                $data['assessment_notes'] ?? null, json_encode($data['approval_conditions'] ?? []),
+                $data['reviewer_id'], $permitId
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Risk assessment completed successfully'
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function createPermitRequirement($data) {
+        try {
+            $this->validatePermitRequirementData($data);
+            $requirementCode = $this->generateRequirementCode();
+
+            $sql = "INSERT INTO event_permit_requirements (
+                requirement_code, event_type, requirement_name,
+                requirement_description, requirement_category, minimum_attendance,
+                risk_level_required, venue_type_required, is_mandatory,
+                is_conditional, condition_description, documents_required,
+                verification_method, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $requirementId = $this->db->insert($sql, [
+                $requirementCode, $data['event_type'], $data['requirement_name'],
+                $data['requirement_description'] ?? null, $data['requirement_category'] ?? 'other',
+                $data['minimum_attendance'] ?? 0, $data['risk_level_required'] ?? 'all',
+                $data['venue_type_required'] ?? null, $data['is_mandatory'] ?? true,
+                $data['is_conditional'] ?? false, $data['condition_description'] ?? null,
+                json_encode($data['documents_required'] ?? []), $data['verification_method'] ?? 'document_review',
+                $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'requirement_id' => $requirementId,
+                'requirement_code' => $requirementCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function scheduleInspection($data) {
+        try {
+            $this->validateInspectionData($data);
+            $inspectionCode = $this->generateInspectionCode();
+
+            $sql = "INSERT INTO event_permit_inspections (
+                inspection_code, permit_id, inspection_type, inspection_date,
+                inspection_time, inspector_name, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+            $inspectionId = $this->db->insert($sql, [
+                $inspectionCode, $data['permit_id'], $data['inspection_type'] ?? 'pre_event',
+                $data['inspection_date'], $data['inspection_time'] ?? null,
+                $data['inspector_name'] ?? null, $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'inspection_id' => $inspectionId,
+                'inspection_code' => $inspectionCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function recordInspectionResults($inspectionId, $data) {
+        try {
+            $this->validateInspectionResultsData($data);
+
+            $sql = "UPDATE event_permit_inspections SET
+                    inspection_status = 'completed',
+                    compliance_status = ?,
+                    inspection_findings = ?,
+                    violations_found = ?,
+                    corrective_actions_required = ?,
+                    follow_up_required = ?,
+                    follow_up_date = ?,
+                    follow_up_notes = ?,
+                    inspection_report = ?,
+                    photos_evidence = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?";
+
+            $this->db->query($sql, [
+                $data['compliance_status'], $data['inspection_findings'] ?? null,
+                json_encode($data['violations_found'] ?? []), json_encode($data['corrective_actions_required'] ?? []),
+                $data['follow_up_required'] ?? false, $data['follow_up_date'] ?? null,
+                $data['follow_up_notes'] ?? null, $data['inspection_report'] ?? null,
+                json_encode($data['photos_evidence'] ?? []), $inspectionId
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Inspection results recorded successfully'
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function createPublicNotification($data) {
+        try {
+            $this->validateNotificationData($data);
+            $notificationCode = $this->generateNotificationCode();
+
+            $sql = "INSERT INTO event_public_notifications (
+                notification_code, permit_id, notification_type, notification_date,
+                publication_date, publication_method, publication_name, publication_reference,
+                notification_title, notification_content, notification_summary,
+                coverage_area, estimated_readership, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $notificationId = $this->db->insert($sql, [
+                $notificationCode, $data['permit_id'], $data['notification_type'] ?? 'initial',
+                $data['notification_date'], $data['publication_date'] ?? null,
+                $data['publication_method'], $data['publication_name'] ?? null,
+                $data['publication_reference'] ?? null, $data['notification_title'],
+                $data['notification_content'], $data['notification_summary'] ?? null,
+                $data['coverage_area'] ?? null, $data['estimated_readership'] ?? null,
+                $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'notification_id' => $notificationId,
+                'notification_code' => $notificationCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function submitPermitAppeal($data) {
+        try {
+            $this->validateAppealData($data);
+            $appealCode = $this->generateAppealCode();
+
+            $sql = "INSERT INTO event_permit_appeals (
+                appeal_code, permit_id, appeal_type, appeal_date,
+                appeal_description, appeal_grounds, supporting_evidence, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $appealId = $this->db->insert($sql, [
+                $appealCode, $data['permit_id'], $data['appeal_type'] ?? 'permit_denial',
+                $data['appeal_date'], $data['appeal_description'],
+                $data['appeal_grounds'] ?? null, json_encode($data['supporting_evidence'] ?? []),
+                $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'appeal_id' => $appealId,
+                'appeal_code' => $appealCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function recordPermitViolation($data) {
+        try {
+            $this->validateViolationData($data);
+            $violationCode = $this->generateViolationCode();
+
+            $sql = "INSERT INTO event_permit_violations (
+                violation_code, permit_id, inspection_id, violation_type,
+                violation_description, severity_level, identified_date,
+                correction_deadline, corrective_actions_required, identified_by, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            $violationId = $this->db->insert($sql, [
+                $violationCode, $data['permit_id'], $data['inspection_id'] ?? null,
+                $data['violation_type'] ?? 'other', $data['violation_description'],
+                $data['severity_level'] ?? 'minor', $data['identified_date'],
+                $data['correction_deadline'] ?? null, $data['corrective_actions_required'] ?? null,
+                $data['identified_by'] ?? null, $data['created_by']
+            ]);
+
+            return [
+                'success' => true,
+                'violation_id' => $violationId,
+                'violation_code' => $violationCode
+            ];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    // Validation Methods
+    private function validatePermitApplicationData($data) {
+        if (empty($data['event_name'])) {
+            throw new Exception('Event name is required');
+        }
+        if (empty($data['event_date'])) {
+            throw new Exception('Event date is required');
+        }
+        if (empty($data['event_start_time'])) {
+            throw new Exception('Event start time is required');
+        }
+        if (empty($data['event_end_time'])) {
+            throw new Exception('Event end time is required');
+        }
+        if (empty($data['venue_name'])) {
+            throw new Exception('Venue name is required');
+        }
+        if (empty($data['venue_address'])) {
+            throw new Exception('Venue address is required');
+        }
+        if (empty($data['venue_city'])) {
+            throw new Exception('Venue city is required');
+        }
+        if (empty($data['organizer_name'])) {
+            throw new Exception('Organizer name is required');
+        }
+        if (empty($data['organizer_email'])) {
+            throw new Exception('Organizer email is required');
+        }
+        if (empty($data['organizer_phone'])) {
+            throw new Exception('Organizer phone is required');
+        }
+        if (empty($data['application_date'])) {
+            throw new Exception('Application date is required');
+        }
+    }
+
+    private function validateRiskAssessmentData($data) {
+        if (empty($data['risk_level'])) {
+            throw new Exception('Risk level is required');
+        }
+        if (empty($data['assessment_date'])) {
+            throw new Exception('Assessment date is required');
+        }
+        if (empty($data['reviewer_id'])) {
+            throw new Exception('Reviewer ID is required');
+        }
+    }
+
+    private function validatePermitRequirementData($data) {
+        if (empty($data['event_type'])) {
+            throw new Exception('Event type is required');
+        }
+        if (empty($data['requirement_name'])) {
+            throw new Exception('Requirement name is required');
+        }
+    }
+
+    private function validateInspectionData($data) {
+        if (empty($data['permit_id'])) {
+            throw new Exception('Permit ID is required');
+        }
+        if (empty($data['inspection_date'])) {
+            throw new Exception('Inspection date is required');
+        }
+    }
+
+    private function validateInspectionResultsData($data) {
+        if (empty($data['compliance_status'])) {
+            throw new Exception('Compliance status is required');
+        }
+    }
+
+    private function validateNotificationData($data) {
+        if (empty($data['permit_id'])) {
+            throw new Exception('Permit ID is required');
+        }
+        if (empty($data['notification_date'])) {
+            throw new Exception('Notification date is required');
+        }
+        if (empty($data['publication_method'])) {
+            throw new Exception('Publication method is required');
+        }
+        if (empty($data['notification_title'])) {
+            throw new Exception('Notification title is required');
+        }
+        if (empty($data['notification_content'])) {
+            throw new Exception('Notification content is required');
+        }
+    }
+
+    private function validateAppealData($data) {
+        if (empty($data['permit_id'])) {
+            throw new Exception('Permit ID is required');
+        }
+        if (empty($data['appeal_date'])) {
+            throw new Exception('Appeal date is required');
+        }
+        if (empty($data['appeal_description'])) {
+            throw new Exception('Appeal description is required');
+        }
+    }
+
+    private function validateViolationData($data) {
+        if (empty($data['permit_id'])) {
+            throw new Exception('Permit ID is required');
+        }
+        if (empty($data['violation_description'])) {
+            throw new Exception('Violation description is required');
+        }
+        if (empty($data['identified_date'])) {
+            throw new Exception('Identified date is required');
+        }
+    }
+
+    // Code Generation Methods
+    private function generatePermitNumber() {
+        return 'EVT-' . date('Y') . '-' . str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
+    }
+
+    private function generateRequirementCode() {
+        return 'REQ-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateInspectionCode() {
+        return 'INSP-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateNotificationCode() {
+        return 'NOTIF-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateAppealCode() {
+        return 'APPEAL-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateViolationCode() {
+        return 'VIOL-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    // Additional API Methods
+    public function getPermitDetails($permitNumber) {
+        try {
+            $sql = "SELECT * FROM event_permits WHERE permit_number = ?";
+            $permit = $this->db->query($sql, [$permitNumber])->fetch(PDO::FETCH_ASSOC);
+
+            if ($permit) {
+                $permit['application_documents'] = json_decode($permit['application_documents'], true);
+                $permit['insurance_documents'] = json_decode($permit['insurance_documents'], true);
+                $permit['risk_assessment_documents'] = json_decode($permit['risk_assessment_documents'], true);
+                $permit['approval_conditions'] = json_decode($permit['approval_conditions'], true);
+            }
+
+            return $permit;
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getPermitsByStatus($status, $limit = 100) {
+        try {
+            $sql = "SELECT * FROM event_permits WHERE permit_status = ? ORDER BY application_date DESC LIMIT ?";
+            return $this->db->query($sql, [$status, $limit])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getUpcomingEvents($daysAhead = 30) {
+        try {
+            $sql = "SELECT * FROM event_permits
+                    WHERE permit_status = 'approved'
+                    AND event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                    ORDER BY event_date ASC, event_start_time ASC";
+
+            return $this->db->query($sql, [$daysAhead])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getPermitRequirements($eventType, $attendance = 0, $riskLevel = 'low') {
+        try {
+            $sql = "SELECT * FROM event_permit_requirements
+                    WHERE event_type = ?
+                    AND requirement_status = 'active'
+                    AND (minimum_attendance <= ? OR minimum_attendance = 0)
+                    AND (risk_level_required = ? OR risk_level_required = 'all')
+                    ORDER BY is_mandatory DESC, requirement_category ASC";
+
+            return $this->db->query($sql, [$eventType, $attendance, $riskLevel])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getPermitInspections($permitId) {
+        try {
+            $sql = "SELECT * FROM event_permit_inspections
+                    WHERE permit_id = ?
+                    ORDER BY inspection_date DESC";
+
+            return $this->db->query($sql, [$permitId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getPermitViolations($permitId) {
+        try {
+            $sql = "SELECT * FROM event_permit_violations
+                    WHERE permit_id = ?
+                    ORDER BY identified_date DESC";
+
+            return $this->db->query($sql, [$permitId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getPublicNotifications($permitId) {
+        try {
+            $sql = "SELECT * FROM event_public_notifications
+                    WHERE permit_id = ?
+                    ORDER BY notification_date DESC";
+
+            return $this->db->query($sql, [$permitId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getPermitAppeals($permitId) {
+        try {
+            $sql = "SELECT * FROM event_permit_appeals
+                    WHERE permit_id = ?
+                    ORDER BY appeal_date DESC";
+
+            return $this->db->query($sql, [$permitId])->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function searchPermits($filters = []) {
+        try {
             $sql = "SELECT * FROM event_permits WHERE 1=1";
             $params = [];
 
-            if (isset($filters['status'])) {
-                $sql .= " AND status = ?";
-                $params[] = $filters['status'];
-            }
-
-            if (isset($filters['event_type'])) {
+            if (!empty($filters['event_type'])) {
                 $sql .= " AND event_type = ?";
                 $params[] = $filters['event_type'];
             }
 
-            if (isset($filters['applicant_id'])) {
-                $sql .= " AND applicant_id = ?";
-                $params[] = $filters['applicant_id'];
+            if (!empty($filters['permit_status'])) {
+                $sql .= " AND permit_status = ?";
+                $params[] = $filters['permit_status'];
             }
 
-            if (isset($filters['event_date'])) {
-                $sql .= " AND event_date = ?";
-                $params[] = $filters['event_date'];
+            if (!empty($filters['venue_city'])) {
+                $sql .= " AND venue_city = ?";
+                $params[] = $filters['venue_city'];
             }
 
-            $sql .= " ORDER BY created_at DESC";
-
-            $results = $db->fetchAll($sql, $params);
-
-            // Decode JSON fields
-            foreach ($results as &$result) {
-                $result['special_equipment'] = json_decode($result['special_equipment'], true);
-                $result['emergency_contacts'] = json_decode($result['emergency_contacts'], true);
-                $result['documents'] = json_decode($result['documents'], true);
+            if (!empty($filters['organizer_name'])) {
+                $sql .= " AND organizer_name LIKE ?";
+                $params[] = '%' . $filters['organizer_name'] . '%';
             }
 
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting event permits: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve event permits'
-            ];
+            if (!empty($filters['event_date_from'])) {
+                $sql .= " AND event_date >= ?";
+                $params[] = $filters['event_date_from'];
+            }
+
+            if (!empty($filters['event_date_to'])) {
+                $sql .= " AND event_date <= ?";
+                $params[] = $filters['event_date_to'];
+            }
+
+            $sql .= " ORDER BY application_date DESC LIMIT 100";
+
+            return $this->db->query($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
-    /**
-     * Get event permit (API handler)
-     */
-    public function getEventPermit(string $permitNumber): array
-    {
-        $permit = $this->getEventPermit($permitNumber);
-
-        if (!$permit) {
-            return [
-                'success' => false,
-                'error' => 'Permit not found'
-            ];
+    private function loadConfig() {
+        $configFile = __DIR__ . '/config/module_config.json';
+        if (file_exists($configFile)) {
+            return json_decode(file_get_contents($configFile), true);
         }
-
         return [
-            'success' => true,
-            'data' => $permit
+            'database_table_prefix' => 'event_',
+            'upload_path' => __DIR__ . '/uploads/',
+            'max_file_size' => 10 * 1024 * 1024, // 10MB
+            'allowed_file_types' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'],
+            'notification_email' => 'admin@example.com',
+            'currency' => 'USD',
+            'default_fees' => [
+                'application_fee' => 50.00,
+                'permit_fee' => 100.00,
+                'insurance_fee' => 25.00
+            ],
+            'risk_levels' => [
+                'low' => ['max_attendance' => 100, 'insurance_required' => false],
+                'medium' => ['max_attendance' => 500, 'insurance_required' => true],
+                'high' => ['max_attendance' => 1000, 'insurance_required' => true],
+                'critical' => ['max_attendance' => 10000, 'insurance_required' => true]
+            ],
+            'notification_period_days' => 14,
+            'appeal_period_days' => 30
         ];
     }
 
-    /**
-     * Create event permit (API handler)
-     */
-    public function createEventPermit(array $data): array
-    {
-        return $this->createEventPermitApplication($data);
+    // Utility Methods
+    public function formatCurrency($amount) {
+        return number_format($amount, 2, '.', ',') . ' ' . $this->config['currency'];
     }
 
-    /**
-     * Update event permit (API handler)
-     */
-    public function updateEventPermit(string $permitNumber, array $data): array
-    {
-        try {
-            $permit = $this->getEventPermit($permitNumber);
-
-            if (!$permit) {
-                return [
-                    'success' => false,
-                    'error' => 'Permit not found'
-                ];
-            }
-
-            if ($permit['status'] !== 'draft') {
-                return [
-                    'success' => false,
-                    'error' => 'Permit cannot be modified'
-                ];
-            }
-
-            $this->updatePermit($permitNumber, $data);
-
-            return [
-                'success' => true,
-                'message' => 'Permit updated successfully'
-            ];
-        } catch (\Exception $e) {
-            error_log("Error updating permit: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to update permit'
-            ];
+    public function validateFileUpload($file) {
+        if ($file['size'] > $this->config['max_file_size']) {
+            return ['valid' => false, 'error' => 'File size exceeds maximum allowed size'];
         }
+
+        $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($extension, $this->config['allowed_file_types'])) {
+            return ['valid' => false, 'error' => 'File type not allowed'];
+        }
+
+        return ['valid' => true];
     }
 
-    /**
-     * Approve event permit (API handler)
-     */
-    public function approveEventPermit(string $permitNumber, array $approvalData): array
-    {
-        return $this->approveEventPermit($permitNumber, $approvalData);
-    }
-
-    /**
-     * Get risk assessments (API handler)
-     */
-    public function getRiskAssessments(array $filters = []): array
-    {
-        try {
-            $db = Database::getInstance();
-
-            $sql = "SELECT * FROM event_risk_assessments WHERE 1=1";
-            $params = [];
-
-            if (isset($filters['permit_id'])) {
-                $sql .= " AND permit_id = ?";
-                $params[] = $filters['permit_id'];
-            }
-
-            if (isset($filters['assessor_id'])) {
-                $sql .= " AND assessor_id = ?";
-                $params[] = $filters['assessor_id'];
-            }
-
-            if (isset($filters['assessment_status'])) {
-                $sql .= " AND assessment_status = ?";
-                $params[] = $filters['assessment_status'];
-            }
-
-            $sql .= " ORDER BY assessment_date DESC";
-
-            $results = $db->fetchAll($sql, $params);
-
-            // Decode JSON fields
-            foreach ($results as &$result) {
-                $result['risk_mitigation_measures'] = json_decode($result['risk_mitigation_measures'], true);
-                $result['additional_requirements'] = json_decode($result['additional_requirements'], true);
-            }
-
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting risk assessments: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve risk assessments'
-            ];
-        }
-    }
-
-    /**
-     * Get event inspections (API handler)
-     */
-    public function getEventInspections(array $filters = []): array
-    {
-        try {
-            $db = Database::getInstance();
-
-            $sql = "SELECT * FROM event_inspections WHERE 1=1";
-            $params = [];
-
-            if (isset($filters['permit_id'])) {
-                $sql .= " AND permit_id = ?";
-                $params[] = $filters['permit_id'];
-            }
-
-            if (isset($filters['inspector_id'])) {
-                $sql .= " AND inspector_id = ?";
-                $params[] = $filters['inspector_id'];
-            }
-
-            if (isset($filters['inspection_status'])) {
-                $sql .= " AND inspection_status = ?";
-                $params[] = $filters['inspection_status'];
-            }
-
-            $sql .= " ORDER BY scheduled_date DESC";
-
-            $results = $db->fetchAll($sql, $params);
-
-            // Decode JSON fields
-            foreach ($results as &$result) {
-                $result['violations_found'] = json_decode($result['violations_found'], true);
-                $result['corrective_actions_required'] = json_decode($result['corrective_actions_required'], true);
-            }
-
-            return [
-                'success' => true,
-                'data' => $results,
-                'count' => count($results)
-            ];
-        } catch (\Exception $e) {
-            error_log("Error getting event inspections: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Failed to retrieve event inspections'
-            ];
-        }
-    }
-
-    /**
-     * Validate permit application data
-     */
-    private function validatePermitApplication(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'applicant_id', 'event_name', 'event_type', 'description',
-            'venue_name', 'venue_address', 'event_date', 'start_time',
-            'end_time', 'expected_attendance'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
-        }
-
-        if (!in_array($data['event_type'] ?? '', ['private', 'public', 'commercial', 'charity', 'government', 'religious', 'cultural', 'sports', 'entertainment', 'other'])) {
-            $errors[] = "Invalid event type";
-        }
-
-        if (!is_numeric($data['expected_attendance']) || $data['expected_attendance'] <= 0) {
-            $errors[] = "Expected attendance must be a positive number";
-        }
-
-        // Validate event date is in the future
-        if (isset($data['event_date']) && strtotime($data['event_date']) <= time()) {
-            $errors[] = "Event date must be in the future";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Validate risk assessment data
-     */
-    private function validateRiskAssessment(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'permit_id', 'assessor_id', 'crowd_density_risk',
-            'traffic_impact_risk', 'noise_impact_risk',
-            'public_safety_risk', 'environmental_impact_risk'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
-        }
-
-        $validRiskLevels = ['low', 'medium', 'high'];
-        $riskFields = ['crowd_density_risk', 'traffic_impact_risk', 'noise_impact_risk', 'public_safety_risk', 'environmental_impact_risk'];
-
-        foreach ($riskFields as $field) {
-            if (!in_array($data[$field] ?? '', $validRiskLevels)) {
-                $errors[] = "Invalid risk level for {$field}";
-            }
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Validate inspection data
-     */
-    private function validateInspectionData(array $data): array
-    {
-        $errors = [];
-
-        $requiredFields = [
-            'permit_id', 'inspector_id', 'inspection_type', 'scheduled_date'
-        ];
-
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                $errors[] = "Required field missing: {$field}";
-            }
-        }
-
-        if (!in_array($data['inspection_type'] ?? '', ['pre_event', 'during_event', 'post_event'])) {
-            $errors[] = "Invalid inspection type";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Validate permit requirements
-     */
-    private function validatePermitRequirements(array $permit): array
-    {
-        $errors = [];
-
-        // Check if all required documents are uploaded
-        $requiredDocuments = $this->getRequiredDocuments($permit);
-        $uploadedDocuments = json_decode($permit['documents'], true) ?? [];
-
-        foreach ($requiredDocuments as $docType => $required) {
-            if ($required && !isset($uploadedDocuments[$docType])) {
-                $errors[] = "Required document missing: {$docType}";
-            }
-        }
-
-        // Check if insurance is required and provided
-        if ($permit['insurance_required'] && !isset($uploadedDocuments['insurance_certificate'])) {
-            $errors[] = "Insurance certificate is required for this event";
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
-
-    /**
-     * Determine event category based on attendance
-     */
-    private function determineEventCategory(int $attendance): string
-    {
-        if ($attendance <= $this->config['max_attendance_small']) {
-            return 'small';
-        } elseif ($attendance <= $this->config['max_attendance_medium']) {
-            return 'medium';
-        } elseif ($attendance <= $this->config['max_attendance_large']) {
-            return 'large';
-        } else {
-            return 'major';
-        }
-    }
-
-    /**
-     * Calculate permit fees
-     */
-    private function calculatePermitFees(array $applicationData, string $eventCategory): array
-    {
-        $baseFee = $this->feeStructures['base_fees'][$eventCategory] ?? 50.00;
-        $additionalFees = 0.00;
-
-        // Add fees for special services
-        if ($applicationData['alcohol_served'] ?? false) {
-            $additionalFees += $this->feeStructures['additional_fees']['alcohol_service'];
-        }
-
-        if ($applicationData['amplified_sound'] ?? false) {
-            $additionalFees += $this->feeStructures['additional_fees']['amplified_sound'];
-        }
-
-        if ($applicationData['food_service'] ?? false) {
-            $additionalFees += $this->feeStructures['additional_fees']['food_service'];
-        }
-
-        if (!empty($applicationData['special_equipment'] ?? [])) {
-            $additionalFees += $this->feeStructures['additional_fees']['special_equipment'];
-        }
-
-        $permitFee = $baseFee + $additionalFees;
-        $securityDeposit = $this->feeStructures['additional_fees']['security_deposit'];
-
-        return [
-            'permit_fee' => $permitFee,
-            'security_deposit' => $securityDeposit
-        ];
-    }
-
-    /**
-     * Check if insurance is required
-     */
-    private function requiresInsurance(array $applicationData): bool
-    {
-        return $applicationData['expected_attendance'] > 100 ||
-               ($applicationData['alcohol_served'] ?? false) ||
-               ($applicationData['amplified_sound'] ?? false) ||
-               !empty($applicationData['special_equipment'] ?? []);
-    }
-
-    /**
-     * Calculate risk score
-     */
-    private function calculateRiskScore(array $assessmentData): int
-    {
-        $totalScore = 0;
-
-        $riskFields = [
-            'crowd_density_risk',
-            'traffic_impact_risk',
-            'noise_impact_risk',
-            'public_safety_risk',
-            'environmental_impact_risk'
-        ];
-
-        foreach ($riskFields as $field) {
-            $riskLevel = $assessmentData[$field];
-            $criteria = $this->riskCriteria[str_replace('_risk', '', $field)][$riskLevel] ?? ['score' => 1];
-            $totalScore += $criteria['score'];
-        }
-
-        return $totalScore;
-    }
-
-    /**
-     * Get required documents for permit
-     */
-    private function getRequiredDocuments(array $permit): array
-    {
-        $required = [
-            'event_plan' => true,
-            'safety_plan' => true,
-            'insurance_certificate' => $permit['insurance_required']
-        ];
-
-        if ($permit['alcohol_served']) {
-            $required['liquor_license'] = true;
-        }
-
-        if ($permit['amplified_sound']) {
-            $required['noise_permit'] = true;
-        }
-
-        return $required;
-    }
-
-    /**
-     * Generate permit number
-     */
-    private function generatePermitNumber(): string
-    {
-        return 'EP' . date('Y') . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Schedule permit inspection
-     */
-    private function schedulePermitInspection(string $permitNumber): bool
-    {
-        $permit = $this->getEventPermit($permitNumber);
-        if (!$permit) {
-            return false;
-        }
-
-        $inspectionDate = date('Y-m-d', strtotime($permit['event_date'] . ' -' . $this->config['inspection_lead_time'] . ' days'));
-
-        $inspection = [
-            'permit_id' => $permit['id'],
-            'inspector_id' => 1, // Default inspector - would be assigned based on availability
-            'inspection_type' => 'pre_event',
-            'scheduled_date' => $inspectionDate,
-            'inspection_status' => 'scheduled'
-        ];
-
-        return $this->saveEventInspection($inspection);
-    }
-
-    /**
-     * Schedule public notification
-     */
-    private function schedulePublicNotification(string $permitNumber): bool
-    {
-        $permit = $this->getEventPermit($permitNumber);
-        if (!$permit) {
-            return false;
-        }
-
-        $notificationDate = date('Y-m-d', strtotime($permit['event_date'] . ' -' . $this->config['public_notification_period'] . ' days'));
-
-        $notification = [
-            'permit_id' => $permit['id'],
-            'notification_type' => 'public_notice',
-            'notification_date' => $notificationDate,
-            'publication_method' => 'website,newspaper',
-            'target_audience' => 'local_residents,businesses',
-            'notification_content' => "Public notice for {$permit['event_name']} on {$permit['event_date']}",
-            'response_deadline' => date('Y-m-d', strtotime($notificationDate . ' +7 days')),
-            'notification_status' => 'planned'
-        ];
-
-        return $this->savePublicNotification($notification);
-    }
-
-    /**
-     * Create inspection violations
-     */
-    private function createInspectionViolations(int $permitId, array $violations): bool
-    {
-        foreach ($violations as $violation) {
-            $violationRecord = [
-                'permit_id' => $permitId,
-                'violation_type' => $violation['type'] ?? 'general',
-                'description' => $violation['description'] ?? '',
-                'severity' => $violation['severity'] ?? 'minor',
-                'reported_date' => date('Y-m-d'),
-                'reported_by' => 1, // Current user
-                'corrective_action_required' => $violation['corrective_action'] ?? '',
-                'deadline_for_correction' => $violation['deadline'] ?? null,
-                'status' => 'open'
-            ];
-
-            $this->saveViolation($violationRecord);
-        }
-
+    public function sendNotification($type, $recipient, $data) {
+        // Implementation would integrate with NotificationManager
+        // This is a placeholder for the notification system
         return true;
     }
 
-    /**
-     * Placeholder methods (would be implemented with actual database operations)
-     */
-    private function savePermitApplication(array $application): bool { return true; }
-    private function startPermitWorkflow(string $permitNumber): bool { return true; }
-    private function sendNotification(string $type, ?int $userId, array $data): bool { return true; }
-    private function getEventPermit(string $permitNumber): ?array { return null; }
-    private function updatePermitStatus(string $permitNumber, string $status, array $additionalData = []): bool { return true; }
-    private function advanceWorkflow(string $permitNumber, string $step): bool { return true; }
-    private function updatePermit(string $permitNumber, array $data): bool { return true; }
-    private function saveRiskAssessment(array $assessment): bool { return true; }
-    private function updatePermitRiskScore(int $permitId, int $score): bool { return true; }
-    private function saveEventInspection(array $inspection): bool { return true; }
-    private function getEventPermitById(int $permitId): ?array { return null; }
-    private function updateEventInspection(int $inspectionId, array $data): bool { return true; }
-    private function getEventInspection(int $inspectionId): ?array { return null; }
-    private function savePublicNotification(array $notification): bool { return true; }
-    private function saveViolation(array $violation): bool { return true; }
-    private function getLastInsertId(): int { return mt_rand(1, 999999); }
+    public function calculateEventRisk($eventData) {
+        $attendance = $eventData['expected_attendance'] ?? 0;
+        $eventType = $eventData['event_type'] ?? 'private';
 
-    /**
-     * Get module statistics
-     */
-    public function getModuleStatistics(): array
-    {
-        return [
-            'total_permits' => 0, // Would query database
-            'approved_permits' => 0,
-            'pending_permits' => 0,
-            'rejected_permits' => 0,
-            'completed_events' => 0,
-            'total_revenue' => 0.00,
-            'average_processing_time' => 0,
-            'risk_assessments_completed' => 0,
-            'inspections_completed' => 0,
-            'violations_reported' => 0
-        ];
+        if ($attendance <= 100) {
+            return 'low';
+        } elseif ($attendance <= 500) {
+            return 'medium';
+        } elseif ($attendance <= 1000) {
+            return 'high';
+        } else {
+            return 'critical';
+        }
+    }
+
+    public function checkInsuranceRequirements($riskLevel) {
+        $riskConfig = $this->config['risk_levels'][$riskLevel] ?? [];
+        return $riskConfig['insurance_required'] ?? true;
     }
 }

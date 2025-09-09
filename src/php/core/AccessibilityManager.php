@@ -2,21 +2,26 @@
 /**
  * TPT Government Platform - Accessibility Manager
  *
- * Comprehensive accessibility framework supporting WCAG 2.1 AA compliance,
- * screen readers, keyboard navigation, and inclusive design principles
+ * Refactored accessibility framework using specialized managers for better maintainability.
+ * Delegates to specific managers for screen readers, keyboard navigation, user preferences, etc.
  */
+
+namespace Core;
+
+use Core\Accessibility\ScreenReaderManager;
+use Core\Accessibility\KeyboardNavigationManager;
+use Core\Accessibility\ColorContrastManager;
+use Core\Accessibility\UserPreferencesManager;
+use Core\Accessibility\AccessibilityAuditEngine;
 
 class AccessibilityManager
 {
     private array $config;
-    private array $accessibilityRules;
-    private array $userPreferences;
-    private array $auditResults;
-    private array $remediationQueue;
-    private ScreenReader $screenReader;
-    private KeyboardNavigation $keyboardNav;
-    private ColorContrastAnalyzer $contrastAnalyzer;
-    private AuditEngine $auditEngine;
+    private ScreenReaderManager $screenReader;
+    private KeyboardNavigationManager $keyboardNav;
+    private ColorContrastManager $contrastAnalyzer;
+    private UserPreferencesManager $userPreferences;
+    private AccessibilityAuditEngine $auditEngine;
 
     /**
      * Accessibility configuration

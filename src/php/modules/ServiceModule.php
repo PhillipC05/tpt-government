@@ -71,22 +71,24 @@ abstract class ServiceModule
     protected array $cache = [];
 
     /**
-     * Constructor
+     * Constructor - Lazy initialization
      */
     public function __construct(array $config = [])
     {
         $this->config = array_merge($this->getDefaultConfig(), $config);
-        $this->initializeModule();
-        $this->loadConfiguration();
-        $this->setupDependencies();
-        $this->registerHooks();
-        $this->initializePermissions();
-        $this->setupDatabase();
-        $this->registerEndpoints();
-        $this->initializeWorkflows();
-        $this->setupForms();
-        $this->configureReports();
-        $this->setupNotifications();
+        $this->metadata = $this->getMetadata();
+
+        // Mark as not fully initialized
+        $this->initialized = false;
+        $this->dependenciesInitialized = false;
+        $this->hooksInitialized = false;
+        $this->permissionsInitialized = false;
+        $this->databaseInitialized = false;
+        $this->endpointsInitialized = false;
+        $this->workflowsInitialized = false;
+        $this->formsInitialized = false;
+        $this->reportsInitialized = false;
+        $this->notificationsInitialized = false;
     }
 
     /**
@@ -136,45 +138,9 @@ abstract class ServiceModule
         return $this->config['enabled'] ?? true;
     }
 
-    /**
-     * Enable module
-     */
-    public function enable(): bool
-    {
-        $this->config['enabled'] = true;
-        $this->saveConfiguration();
-        $this->onEnable();
-        return true;
-    }
 
-    /**
-     * Disable module
-     */
-    public function disable(): bool
-    {
-        $this->config['enabled'] = false;
-        $this->saveConfiguration();
-        $this->onDisable();
-        return true;
-    }
 
-    /**
-     * Install module
-     */
-    public function install(): bool
-    {
-        try {
-            $this->createDatabaseTables();
-            $this->createDirectories();
-            $this->setDefaultPermissions();
-            $this->initializeData();
-            $this->onInstall();
-            return true;
-        } catch (\Exception $e) {
-            $this->onInstallError($e);
-            return false;
-        }
-    }
+
 
     /**
      * Uninstall module
@@ -559,48 +525,9 @@ abstract class ServiceModule
         }
     }
 
-    /**
-     * Get module statistics
-     */
-    public function getStatistics(): array
-    {
-        return [
-            'name' => $this->getName(),
-            'version' => $this->getVersion(),
-            'enabled' => $this->isEnabled(),
-            'tables_count' => count($this->tables),
-            'endpoints_count' => count($this->endpoints),
-            'workflows_count' => count($this->workflows),
-            'forms_count' => count($this->forms),
-            'reports_count' => count($this->reports),
-            'cache_size' => count($this->cache)
-        ];
-    }
 
-    /**
-     * Validate module configuration
-     */
-    public function validateConfiguration(): array
-    {
-        $errors = [];
 
-        // Validate required configuration
-        $requiredFields = $this->getRequiredConfigFields();
-        foreach ($requiredFields as $field) {
-            if (!isset($this->config[$field]) || empty($this->config[$field])) {
-                $errors[] = "Required configuration field missing: {$field}";
-            }
-        }
 
-        // Validate configuration values
-        $validationErrors = $this->validateConfigValues();
-        $errors = array_merge($errors, $validationErrors);
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors
-        ];
-    }
 
     /**
      * Get required configuration fields
@@ -618,27 +545,7 @@ abstract class ServiceModule
         return []; // Override in subclasses
     }
 
-    /**
-     * Export module data
-     */
-    public function exportData(string $format = 'json'): string
-    {
-        $exportData = [
-            'metadata' => $this->metadata,
-            'config' => $this->config,
-            'statistics' => $this->getStatistics(),
-            'exported_at' => date('c')
-        ];
 
-        switch ($format) {
-            case 'json':
-                return json_encode($exportData, JSON_PRETTY_PRINT);
-            case 'xml':
-                return $this->exportToXML($exportData);
-            default:
-                throw new \Exception("Unsupported export format: {$format}");
-        }
-    }
 
     /**
      * Import module data
@@ -739,51 +646,322 @@ abstract class ServiceModule
         $this->saveConfiguration();
     }
 
+
+
+
+
+
+
     /**
-     * Get module dependencies
+     * Ensure module is fully initialized
      */
-    public function getDependencies(): array
+    protected function ensureInitialized(): void
     {
-        return $this->dependencies;
+        if (!$this->initialized) {
+            $this->initializeModule();
+            $this->loadConfiguration();
+            $this->initialized = true;
+        }
     }
 
     /**
-     * Get module permissions
+     * Ensure dependencies are initialized
      */
-    public function getPermissions(): array
+    protected function ensureDependenciesInitialized(): void
     {
-        return $this->permissions;
+        if (!$this->dependenciesInitialized) {
+            $this->setupDependencies();
+            $this->dependenciesInitialized = true;
+        }
     }
 
     /**
-     * Get module endpoints
+     * Ensure hooks are initialized
+     */
+    protected function ensureHooksInitialized(): void
+    {
+        if (!$this->hooksInitialized) {
+            $this->registerHooks();
+            $this->hooksInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure permissions are initialized
+     */
+    protected function ensurePermissionsInitialized(): void
+    {
+        if (!$this->permissionsInitialized) {
+            $this->initializePermissions();
+            $this->permissionsInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure database is initialized
+     */
+    protected function ensureDatabaseInitialized(): void
+    {
+        if (!$this->databaseInitialized) {
+            $this->setupDatabase();
+            $this->databaseInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure endpoints are initialized
+     */
+    protected function ensureEndpointsInitialized(): void
+    {
+        if (!$this->endpointsInitialized) {
+            $this->registerEndpoints();
+            $this->endpointsInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure workflows are initialized
+     */
+    protected function ensureWorkflowsInitialized(): void
+    {
+        if (!$this->workflowsInitialized) {
+            $this->initializeWorkflows();
+            $this->workflowsInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure forms are initialized
+     */
+    protected function ensureFormsInitialized(): void
+    {
+        if (!$this->formsInitialized) {
+            $this->setupForms();
+            $this->formsInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure reports are initialized
+     */
+    protected function ensureReportsInitialized(): void
+    {
+        if (!$this->reportsInitialized) {
+            $this->configureReports();
+            $this->reportsInitialized = true;
+        }
+    }
+
+    /**
+     * Ensure notifications are initialized
+     */
+    protected function ensureNotificationsInitialized(): void
+    {
+        if (!$this->notificationsInitialized) {
+            $this->setupNotifications();
+            $this->notificationsInitialized = true;
+        }
+    }
+
+    /**
+     * Get module endpoints (lazy initialization)
      */
     public function getEndpoints(): array
     {
+        $this->ensureEndpointsInitialized();
         return $this->endpoints;
     }
 
     /**
-     * Get module workflows
+     * Get module workflows (lazy initialization)
      */
     public function getWorkflows(): array
     {
+        $this->ensureWorkflowsInitialized();
         return $this->workflows;
     }
 
     /**
-     * Get module forms
+     * Get module forms (lazy initialization)
      */
     public function getForms(): array
     {
+        $this->ensureFormsInitialized();
         return $this->forms;
     }
 
     /**
-     * Get module reports
+     * Get module reports (lazy initialization)
      */
     public function getReports(): array
     {
+        $this->ensureReportsInitialized();
         return $this->reports;
+    }
+
+    /**
+     * Get module permissions (lazy initialization)
+     */
+    public function getPermissions(): array
+    {
+        $this->ensurePermissionsInitialized();
+        return $this->permissions;
+    }
+
+    /**
+     * Get module dependencies (lazy initialization)
+     */
+    public function getDependencies(): array
+    {
+        $this->ensureDependenciesInitialized();
+        return $this->dependencies;
+    }
+
+    /**
+     * Enable module (lazy initialization)
+     */
+    public function enable(): bool
+    {
+        $this->ensureInitialized();
+        $this->config['enabled'] = true;
+        $this->saveConfiguration();
+        $this->onEnable();
+        return true;
+    }
+
+    /**
+     * Disable module (lazy initialization)
+     */
+    public function disable(): bool
+    {
+        $this->ensureInitialized();
+        $this->config['enabled'] = false;
+        $this->saveConfiguration();
+        $this->onDisable();
+        return true;
+    }
+
+    /**
+     * Install module (lazy initialization)
+     */
+    public function install(): bool
+    {
+        try {
+            $this->ensureInitialized();
+            $this->ensureDatabaseInitialized();
+            $this->createDatabaseTables();
+            $this->createDirectories();
+            $this->ensurePermissionsInitialized();
+            $this->setDefaultPermissions();
+            $this->initializeData();
+            $this->onInstall();
+            return true;
+        } catch (\Exception $e) {
+            $this->onInstallError($e);
+            return false;
+        }
+    }
+
+    /**
+     * Get module statistics (lazy initialization)
+     */
+    public function getStatistics(): array
+    {
+        $this->ensureInitialized();
+        return [
+            'name' => $this->getName(),
+            'version' => $this->getVersion(),
+            'enabled' => $this->isEnabled(),
+            'tables_count' => count($this->tables),
+            'endpoints_count' => count($this->getEndpoints()),
+            'workflows_count' => count($this->getWorkflows()),
+            'forms_count' => count($this->getForms()),
+            'reports_count' => count($this->getReports()),
+            'cache_size' => count($this->cache),
+            'fully_initialized' => $this->initialized
+        ];
+    }
+
+    /**
+     * Validate module configuration (lazy initialization)
+     */
+    public function validateConfiguration(): array
+    {
+        $this->ensureInitialized();
+        $errors = [];
+
+        // Validate required configuration
+        $requiredFields = $this->getRequiredConfigFields();
+        foreach ($requiredFields as $field) {
+            if (!isset($this->config[$field]) || empty($this->config[$field])) {
+                $errors[] = "Required configuration field missing: {$field}";
+            }
+        }
+
+        // Validate configuration values
+        $validationErrors = $this->validateConfigValues();
+        $errors = array_merge($errors, $validationErrors);
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors
+        ];
+    }
+
+    /**
+     * Export module data (lazy initialization)
+     */
+    public function exportData(string $format = 'json'): string
+    {
+        $this->ensureInitialized();
+        $exportData = [
+            'metadata' => $this->metadata,
+            'config' => $this->config,
+            'statistics' => $this->getStatistics(),
+            'exported_at' => date('c')
+        ];
+
+        switch ($format) {
+            case 'json':
+                return json_encode($exportData, JSON_PRETTY_PRINT);
+            case 'xml':
+                return $this->exportToXML($exportData);
+            default:
+                throw new \Exception("Unsupported export format: {$format}");
+        }
+    }
+
+    /**
+     * Force full initialization
+     */
+    public function initializeFully(): void
+    {
+        $this->ensureInitialized();
+        $this->ensureDependenciesInitialized();
+        $this->ensureHooksInitialized();
+        $this->ensurePermissionsInitialized();
+        $this->ensureDatabaseInitialized();
+        $this->ensureEndpointsInitialized();
+        $this->ensureWorkflowsInitialized();
+        $this->ensureFormsInitialized();
+        $this->ensureReportsInitialized();
+        $this->ensureNotificationsInitialized();
+    }
+
+    /**
+     * Check if module is fully initialized
+     */
+    public function isFullyInitialized(): bool
+    {
+        return $this->initialized &&
+               $this->dependenciesInitialized &&
+               $this->hooksInitialized &&
+               $this->permissionsInitialized &&
+               $this->databaseInitialized &&
+               $this->endpointsInitialized &&
+               $this->workflowsInitialized &&
+               $this->formsInitialized &&
+               $this->reportsInitialized &&
+               $this->notificationsInitialized;
     }
 }

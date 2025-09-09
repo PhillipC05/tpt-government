@@ -3,13 +3,22 @@
  * TPT Government Platform - Main Application Class
  *
  * The main application controller that handles routing and request processing.
- * Implements a simple MVC-like architecture without external frameworks.
+ * Implements a simple MVC-like architecture with dependency injection.
  */
 
 namespace Core;
 
+use Core\DependencyInjection\Container;
+use Core\DependencyInjection\DatabaseServiceProvider;
+use Core\Interfaces\CacheInterface;
+
 class Application
 {
+    /**
+     * Dependency injection container
+     */
+    private Container $container;
+
     /**
      * Router instance
      */
@@ -33,14 +42,23 @@ class Application
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(?Container $container = null)
     {
-        $this->request = new Request();
-        $this->response = new Response();
-        $this->router = new Router($this->request, $this->response);
+        // Initialize dependency injection container
+        $this->container = $container ?? $this->createContainer();
 
-        // Initialize database if configured
-        $this->initializeDatabase();
+        // Get core services from container
+        $this->request = $this->container->get(Request::class);
+        $this->response = $this->container->get(Response::class);
+        $this->router = $this->container->get('router.optimized');
+
+        // Try to get database from container (may not be available in some contexts)
+        try {
+            $this->database = $this->container->get('database');
+        } catch (\Exception $e) {
+            // Database not configured, continue without it
+            $this->database = null;
+        }
 
         // Register routes
         $this->registerRoutes();
@@ -147,22 +165,19 @@ class Application
 
         // Execute controller method
         if (is_array($controller)) {
-            $controllerInstance = new $controller[0]();
+            $controllerClass = $controller[0];
             $methodName = $controller[1];
         } else {
-            $controllerInstance = new $controller();
+            $controllerClass = $controller;
             $methodName = $method;
         }
 
-        // Inject dependencies
-        if (method_exists($controllerInstance, 'setRequest')) {
-            $controllerInstance->setRequest($this->request);
-        }
-        if (method_exists($controllerInstance, 'setResponse')) {
-            $controllerInstance->setResponse($this->response);
-        }
-        if (method_exists($controllerInstance, 'setDatabase') && $this->database) {
-            $controllerInstance->setDatabase($this->database);
+        // Create controller instance with dependency injection
+        if ($this->container->has($controllerClass)) {
+            $controllerInstance = $this->container->get($controllerClass);
+        } else {
+            // Fallback to manual instantiation with container
+            $controllerInstance = new $controllerClass($this->container);
         }
 
         // Call the controller method
@@ -268,5 +283,87 @@ class Application
     public function getDatabase(): ?Database
     {
         return $this->database;
+    }
+
+    /**
+     * Get the dependency injection container
+     *
+     * @return Container
+     */
+    public function getContainer(): Container
+    {
+        return $this->container;
+    }
+
+    /**
+     * Create the dependency injection container
+     *
+     * @return Container
+     */
+    private function createContainer(): Container
+    {
+        $container = new Container();
+
+        // Register core services
+        $container->singleton(Request::class, function () {
+            return new Request();
+        });
+
+        $container->singleton(Response::class, function () {
+            return new Response();
+        });
+
+        $container->singleton(Router::class, function ($container) {
+            return new Router(
+                $container->get(Request::class),
+                $container->get(Response::class)
+            );
+        });
+
+        // Register optimized router with cache support
+        $container->singleton('router.optimized', function ($container) {
+            $cache = null;
+            try {
+                $cache = $container->get(CacheInterface::class);
+            } catch (\Exception $e) {
+                // Cache not available, continue without it
+            }
+
+            return new RouterOptimized(
+                $container->get(Request::class),
+                $container->get(Response::class),
+                $cache
+            );
+        });
+
+        // Register controllers
+        $container->singleton(ApiController::class, function ($container) {
+            return new ApiController($container);
+        });
+
+        $container->singleton(AuthController::class, function ($container) {
+            return new AuthController($container);
+        });
+
+        $container->singleton(UserController::class, function ($container) {
+            return new UserController($container);
+        });
+
+        $container->singleton(HomeController::class, function ($container) {
+            return new HomeController($container);
+        });
+
+        $container->singleton(DashboardController::class, function ($container) {
+            return new DashboardController($container);
+        });
+
+        $container->singleton(AdminController::class, function ($container) {
+            return new AdminController($container);
+        });
+
+        // Register service providers
+        $container->register(new DatabaseServiceProvider());
+
+        return $container;
     }
 }
