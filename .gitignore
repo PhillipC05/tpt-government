@@ -48,3 +48,7 @@ Thumbs.db
 
 # Backups
 /backups/
+
+# Landing page directory and zip
+tpt-government-landing/
+tpt-government-landing.zip
