@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://docker.com)
-[![PHP 8.2](https://img.shields.io/badge/PHP-8.2-777BB4)](https://php.net)
+[![PHP 8.1+](https://img.shields.io/badge/PHP-8.1+-777BB4)](https://php.net)
 [![MySQL 8.0](https://img.shields.io/badge/MySQL-8.0-4479A1)](https://mysql.com)
 
 A comprehensive, open-source government platform with AI integration, PWA capabilities, and enterprise-grade security. Built for modern government agencies that need robust, scalable, and user-friendly digital services.
@@ -13,8 +13,8 @@ A comprehensive, open-source government platform with AI integration, PWA capabi
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/tpt-gov-platform.git
-cd tpt-gov-platform
+git clone https://github.com/PhillipC05/tpt-government.git
+cd tpt-government
 
 # 2. Start the platform
 ./deploy.sh deploy
@@ -147,8 +147,8 @@ php artisan serve
 # Follow our complete guide: docs/deployment/digital-ocean.md
 
 # Quick start:
-git clone https://github.com/your-org/tpt-gov-platform.git
-cd tpt-gov-platform
+git clone https://github.com/PhillipC05/tpt-government.git
+cd tpt-government
 ./deploy.sh deploy
 ```
 
@@ -316,7 +316,7 @@ We welcome contributions from the community! Please see our [Contributing Guide]
 ### Development Setup
 ```bash
 # Clone repository
-git clone https://github.com/your-org/tpt-gov-platform.git
+git clone https://github.com/PhillipC05/tpt-government.git
 
 # Install dependencies
 composer install
@@ -350,14 +350,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🆘 Support
 
 ### Community Support
-- **Documentation**: [docs.tpt.gov](https://docs.tpt.gov)
-- **Forum**: [community.tpt.gov](https://community.tpt.gov)
-- **Issues**: [GitHub Issues](https://github.com/your-org/tpt-gov-platform/issues)
-
-### Professional Support
-- **Enterprise Support**: [enterprise@tpt.gov](mailto:enterprise@tpt.gov)
-- **Training**: [training@tpt.gov](mailto:training@tpt.gov)
-- **Consulting**: [consulting@tpt.gov](mailto:consulting@tpt.gov)
+- **Issues**: [GitHub Issues](https://github.com/PhillipC05/tpt-government/issues)
 
 ## 🙏 Acknowledgments
 
@@ -368,13 +361,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-- **Website**: [tpt.gov](https://tpt.gov)
-- **Email**: [info@tpt.gov](mailto:info@tpt.gov)
-- **Twitter**: [@TPTGov](https://twitter.com/TPTGov)
-- **LinkedIn**: [TPT Government](https://linkedin.com/company/tpt-gov)
+- **Website**: [government.tptsolutions.co.nz](https://government.tptsolutions.co.nz)
 
 ---
 
 **Ready to transform your government services?** 🚀
 
-[Get Started Now](docs/getting-started.md) | [View Demo](https://demo.tpt.gov) | [Schedule Consultation](https://tpt.gov/consultation)
+[Get Started Now](docs/getting-started.md)
