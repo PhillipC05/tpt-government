@@ -4,40 +4,40 @@
  *
  * Comprehensive building consent and permitting system
  * supporting application submission, plan review, inspections, and compliance
+ *
+ * INTEGRATES:
+ * - Managers: Application, Inspection, Certificate, Fee, Compliance
+ * - Repositories: Data access layer with standardized patterns
+ * - Validators: Input validation with business rules
+ * - Workflow: State management and business process orchestration
  */
 
 namespace Modules\BuildingConsents;
 
 use Modules\ServiceModule;
 use Core\Database;
-use Core\WorkflowEngine;
+use Core\Workflow\WorkflowManager;
+use Core\Logging\StructuredLogger;
 use Core\NotificationManager;
 use Core\PaymentGateway;
 
-class BuildingConsentsModule extends ServiceModule
-{
-    /**
-     * Module metadata
-     */
-    protected array $metadata = [
-        'name' => 'Building Consents',
-        'version' => '2.3.0',
-        'description' => 'Comprehensive building consent and permitting system',
-        'author' => 'TPT Government Platform',
-        'category' => 'permitting_services',
-        'dependencies' => ['database', 'workflow', 'payment', 'notification']
-    ];
+// Import new components
+use Modules\BuildingConsents\Managers\BuildingConsentApplicationManager;
+use Modules\BuildingConsents\Managers\BuildingInspectionManager;
+use Modules\BuildingConsents\Managers\BuildingCertificateManager;
+use Modules\BuildingConsents\Managers\BuildingFeeManager;
+use Modules\BuildingConsents\Managers\BuildingComplianceManager;
 
-    /**
-     * Module dependencies
-     */
-    protected array $dependencies = [
-        ['name' => 'Database', 'version' => '>=1.0.0'],
-        ['name' => 'WorkflowEngine', 'version' => '>=1.0.0'],
-        ['name' => 'PaymentGateway', 'version' => '>=1.0.0'],
-        ['name' => 'NotificationManager', 'version' => '>=1.0.0']
-    ];
+use Modules\BuildingConsents\Repositories\BuildingConsentRepository;
+use Modules\BuildingConsents\Repositories\BuildingInspectionRepository;
+use Modules\BuildingConsents\Repositories\BuildingCertificateRepository;
+use Modules\BuildingConsents\Repositories\BuildingFeeRepository;
+use Modules\BuildingConsents\Repositories\BuildingComplianceRepository;
 
+use Modules\BuildingConsents\Validators\BuildingConsentValidator;
+use Modules\BuildingConsents\Validators\BuildingInspectionValidator;
+use Modules\BuildingConsents\Validators\BuildingCertificateValidator;
+use Modules\BuildingConsents\Validators\BuildingFeeValidator;
     /**
      * Module permissions
      */
